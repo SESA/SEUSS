@@ -1,0 +1,66 @@
+cmake_minimum_required(VERSION 2.6 FATAL_ERROR)
+project("seuss-ebbrt" C CXX)
+
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+set(CMAKE_CXX_FLAGS_DEBUG          "-O0 -g3")
+set(CMAKE_CXX_FLAGS_MINSIZEREL     "-Os -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE        "-O4 -flto -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g3")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++14 -Wall -Werror")
+
+## Sources
+# shared 
+set(SOURCES
+      src/InstallGlobalIdMap.cc
+      src/dsys/Controller.cc
+      src/seuss.cc )
+
+# hosted-only
+set(HOSTED_SOURCES
+      ${SOURCES}
+      src/hosted/main.cc)
+
+# native-only
+set(BAREMETAL_SOURCES
+      ${SOURCES}
+      )
+
+# ebbrt-zookeeper is required by hosted & native
+find_package(EbbRTZooKeeper REQUIRED)
+
+## Baremetal  ========================================================
+if( ${CMAKE_SYSTEM_NAME} STREQUAL "EbbRT")
+  find_package(EbbRTSocket REQUIRED)
+  include_directories(${EBBRT-SOCKET_INCLUDE_DIRS}
+    ${EBBRT-ZOOKEEPER_INCLUDE_DIRS})
+  add_executable(seuss.elf ${BAREMETAL_SOURCES})
+  target_link_libraries(seuss.elf ${EBBRT-ZOOKEEPER_LIBRARIES} ${EBBRT-SOCKET_LIBRARIES})
+  add_custom_command(TARGET seuss.elf POST_BUILD
+    COMMAND objcopy -O elf32-i386 seuss.elf seuss.elf32 )
+
+## Hosted  ===========================================================
+elseif( ${CMAKE_SYSTEM_NAME} STREQUAL "Linux" )
+  find_package(EbbRT REQUIRED)
+  find_package(Boost 1.53.0 REQUIRED COMPONENTS
+    filesystem system coroutine context program_options)
+  find_package(Capnp REQUIRED)
+  find_package(TBB REQUIRED)
+  find_package(Threads REQUIRED)
+
+  ## Seuss dependencies 
+  # cppkafka - requires librdkafka at CMAKE_PREFIX_PATH
+  find_library(CPPKAFKA_LIBRARIES NAMES cppkafka)
+
+  # pillowtalk
+  find_library(PILLOWTALK_LIBRARIES NAMES pillowtalk)
+
+	## seuss target
+  include_directories(${EBBRT_INCLUDE_DIRS} ${RDKAFKA_INCLUDE_DIR})
+  add_executable(seuss ${HOSTED_SOURCES})
+  target_link_libraries(seuss ${CPPKAFKA_LIBRARIES} ${PILLOWTALK_LIBRARIES} ${EBBRT_LIBRARIES}
+    ${CAPNP_LIBRARIES_LITE} ${CMAKE_THREAD_LIBS_INIT} ${EBBRT-ZOOKEEPER_LIBRARIES} 
+    ${Boost_LIBRARIES} ${TBB_LIBRARIES} ${EBBRT_LIBRARIES}
+  )
+else()
+  message(FATAL_ERROR "System name unsupported: ${CMAKE_SYSTEM_NAME}")
+endif()

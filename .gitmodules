@@ -1,0 +1,16 @@
+[submodule "ext/librdkafka"]
+	path = ext/librdkafka
+	url = https://github.com/edenhill/librdkafka
+[submodule "ext/cppkafka"]
+	path = ext/cppkafka
+	url = https://github.com/mfontanini/cppkafka.git
+[submodule "ext/pillowtalk"]
+	path = ext/pillowtalk
+	url = https://github.com/mgmarino/pillowtalk.git
+[submodule "ext/yajl"]
+	path = ext/yajl
+	url = https://github.com/lloyd/yajl.git
+[submodule "ext/EbbRT"]
+	path = ext/EbbRT
+	url = http://www.github.com/jmcadden/EbbRT
+	branch = container_deploy

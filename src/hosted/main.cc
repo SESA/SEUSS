@@ -31,6 +31,7 @@ using cppkafka::TopicPartitionList;
 
 string native_binary_path;
 uint8_t native_instances=1;
+string zookeeper_hosts;
 
 namespace { // local
 static char* ExecName = 0;
@@ -46,6 +47,7 @@ po::options_description ebbrt_po(){
   po::options_description options("EbbRT configuration");
   options.add_options()("natives,n", po::value<uint8_t>(&native_instances), "Native instances");
   options.add_options()("elf32,b", po::value<string>(&native_binary_path), "Native binary");
+  options.add_options()("zookeeper,z", po::value<string>(&zookeeper_hosts), "Zookeeper Hosts");
   return options;
 }
 
@@ -70,26 +72,40 @@ po::options_description couchdb_po(){
   return options;
 }
 
+bool  kafka_process_po(po::variables_map &vm) {
+  if (vm.count("kafka-brokers")) {
+    std::cout << "Kafka Hosts: " << vm["kafka-brokers"].as<string>() << std::endl;
+  }
+  if (vm.count("kafka-topic")) {
+    std::cout << "Kafka Topic: " << vm["kafka-topic"].as<string>() << std::endl;
+  }
+  return true;
+}
+
 bool  ebbrt_process_po(po::variables_map &vm) {
 	bool spawn = false;
   if (vm.count("natives")) {
     std::cout << "Native instances to spawn: " << vm["natives"].as<uint8_t>() << std::endl;
   }
   if (vm.count("elf32")) {
-
     std::cout << "Native binary to boot: " << vm["elf32"].as<string>() << std::endl;
     auto bindir = fs::system_complete(ExecName).parent_path() /
                   vm["elf32"].as<string>();
 		native_binary_path = bindir.string();
 		spawn = true;
   }
+  if (vm.count("zookeeper")) {
+    std::cout << "Zookeeper Hosts: " << vm["zookeeper"].as<string>() << std::endl;
+  }
   return spawn;
 }
 
 void kafka_test() {
-		cout << "Running the Kafka test" << endl;
+		cout << "Running the Kafka test..." << endl;
     // Stop processing on SIGINT
-    signal(SIGINT, [](int) { running = false; });
+    signal(SIGINT, [](int) { exit(0); });
+
+    while(1);
 
     // Construct the configuration
     Configuration config = {
@@ -147,10 +163,13 @@ void kafka_test() {
 int main(int argc, char **argv) {
   void *status;
   ExecName = argv[0];
+
+  uint32_t port;
   /* process program options */
   po::options_description po("Default configuration");
   po::variables_map povm;
   po.add_options()("help", "Help message"); // Default
+  po.add_options()("port,p", po::value<uint32_t>(&port), "Port");
   po.add(ebbrt_po()); // EbbRT program options
   po.add(kafka_po()); // Kafka (cppkafka) program options
   po.add(couchdb_po()); // CouchDB (pillowtalk) program options
@@ -168,7 +187,7 @@ int main(int argc, char **argv) {
     return 0;
   }
 
-  /** deploy ebbrt runtime */
+  /** deploy ebbrt runtime  & backends */
   if (ebbrt_process_po(povm)) {
     pthread_t tid = ebbrt::Cpu::EarlyInit(1);
     pthread_join(tid, &status);
@@ -176,9 +195,8 @@ int main(int argc, char **argv) {
   }
 
 	/** deploy kafka test */ 
-  if (povm.count("kafka")) {
+  if (kafka_process_po(povm)) {
     kafka_test();
-    return 0;
   }
 
   return 0;

@@ -154,7 +154,7 @@ void kafka_test() {
   while(1){
     // Create a message builder for this topic
     MessageBuilder builder("health");
-    auto pl = std::string("{\"instance\":\"0\",\"name\":\"seuss_invoker0\"}");
+    auto pl = std::string("{\"name\":{\"instance\":0,\"name\":\"0\"}}");
     builder.payload(pl);
     producer.produce(builder);
 

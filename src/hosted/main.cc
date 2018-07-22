@@ -3,11 +3,12 @@
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
 
+#include <cinttypes> // PRId64, etc
+#include <csignal>
 #include <iostream>
 #include <stdlib.h> // exit
-#include <cinttypes> // PRId64, etc
-#include <iostream>
-#include <csignal>
+#include <thread> 
+#include <chrono>  
 
 using std::string;
 using std::cout;
@@ -18,13 +19,27 @@ using std::endl;
 namespace po = boost::program_options;
 namespace fs = boost::filesystem;
 
+#include "cppkafka/utils/buffered_producer.h"
 #include "cppkafka/consumer.h"
 #include "cppkafka/configuration.h"
+#include "cppkafka/producer.h"
+#include "cppkafka/configuration.h"
+#include "cppkafka/metadata.h"
+#include "cppkafka/topic.h"
 
-using cppkafka::Consumer;
+using cppkafka::BrokerMetadata;
+using cppkafka::BufferedProducer;
 using cppkafka::Configuration;
+using cppkafka::Exception;
+using cppkafka::GroupInformation;
+using cppkafka::GroupMemberInformation;
+using cppkafka::MemberAssignmentInformation;
 using cppkafka::Message;
-using cppkafka::TopicPartitionList;
+using cppkafka::MessageBuilder;
+using cppkafka::Metadata;
+using cppkafka::Producer;
+using cppkafka::Topic;
+using cppkafka::TopicMetadata;
 
 #include <ebbrt/Cpu.h> // ebbrt::Cpu::EarlyInit
 #include "common.h"
@@ -37,9 +52,7 @@ namespace { // local
 static char* ExecName = 0;
 string brokers;
 string topic_name;
-string group_id;
 string couchdb;
-bool running = true;
 }
 
 /** Boost Program Options */
@@ -58,8 +71,6 @@ po::options_description kafka_po(){
                        "the kafka broker list")
         ("kafka-topic,t",    po::value<string>(&topic_name),
                        "the topic in which to write to")
-        ("kafka-group-id,g", po::value<string>(&group_id),
-                       "the consumer group id")
         ;
   return options;
 }
@@ -105,8 +116,63 @@ void kafka_test() {
     // Stop processing on SIGINT
     signal(SIGINT, [](int) { exit(0); });
 
-    while(1);
+    // Construct the configuration
+    Configuration config = {
+        { "metadata.broker.list", brokers }
+    };
 
+#if 0
+    BufferedProducer<string> producer(config);
+    // Set a produce success callback
+    producer.set_produce_success_callback([](const Message& msg) {
+        cout << "Successfully produced message with payload " << msg.get_payload() << endl;
+    });
+    // Set a produce failure callback
+    producer.set_produce_failure_callback([](const Message& msg) {
+        cout << "Failed to produce message with payload " << msg.get_payload() << endl;
+        // Return false so we stop trying to produce this message
+        return false;
+    });
+#endif
+
+    // Create the producer
+    Producer producer(config);
+    Metadata metadata = producer.get_metadata();
+
+    cout << "Found the following brokers: " << endl;
+    for (const BrokerMetadata& broker : metadata.get_brokers()) {
+        cout << "* " << broker.get_host() << endl;
+    }
+    cout << endl;
+    cout << "Found the following topics: " << endl;
+    for (const TopicMetadata& topic : metadata.get_topics()) {
+        cout << "* " << topic.get_name() << ": " << topic.get_partitions().size()
+             << " partitions" << endl;
+    }
+
+    cout << "Entering ping loop..." << endl;
+  while(1){
+    // Create a message builder for this topic
+    MessageBuilder builder("health");
+    auto pl = std::string("{\"instance\":\"0\",\"name\":\"seuss_invoker0\"}");
+    builder.payload(pl);
+    producer.produce(builder);
+
+    std::this_thread::sleep_for (std::chrono::seconds(1));
+  }
+  //std::thread hl (kafka_health_loop);
+  //hl.join();  
+
+#if 0
+    // Now read lines and write them into kafka
+    string line;
+    while (getline(cin, line)) {
+        // Set the payload on this builder
+        builder.payload(line);
+
+        // Actually produce the message we've built
+        producer.produce(builder);
+    }
     // Construct the configuration
     Configuration config = {
         { "metadata.broker.list", brokers },
@@ -157,6 +223,7 @@ void kafka_test() {
             }
         }
     }
+#endif
 }
 
 

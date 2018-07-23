@@ -50,16 +50,25 @@ string zookeeper_hosts;
 
 namespace { // local
 static char* ExecName = 0;
+
+// Kafka
 string brokers;
 string topic_name;
-string couchdb;
+
+// CouchDB
+string db_host;
+string db_password;
+string db_port;
+string db_protocol;
+string db_provider;
+string db_username;
 }
 
 /** Boost Program Options */
 po::options_description ebbrt_po(){
   po::options_description options("EbbRT configuration");
-  options.add_options()("natives,n", po::value<uint8_t>(&native_instances), "Native instances");
-  options.add_options()("elf32,b", po::value<string>(&native_binary_path), "Native binary");
+  options.add_options()("natives,n", po::value<uint8_t>(&native_instances), "EbbRT native instances");
+  options.add_options()("elf32,b", po::value<string>(&native_binary_path), "EbbRT native binary");
   options.add_options()("zookeeper,z", po::value<string>(&zookeeper_hosts), "Zookeeper Hosts");
   return options;
 }
@@ -68,22 +77,25 @@ po::options_description kafka_po(){
     po::options_description options("Kafka");
     options.add_options()
         ("kafka-brokers,k",  po::value<string>(&brokers), 
-                       "the kafka broker list")
+                       "Kafka brokers")
         ("kafka-topic,t",    po::value<string>(&topic_name),
-                       "the topic in which to write to")
+                       "Kafka topic")
         ;
   return options;
 }
 
 po::options_description couchdb_po(){
     po::options_description options("CouchDB");
-    options.add_options()
-        ("couchdb-server,cdb",  po::value<string>(&couchdb), 
-                       "CouchDB server");
+		options.add_options()("db_host", po::value<string>(&db_host), "CouchDB host");
+		options.add_options()("db_password", po::value<string>(&db_password), "CouchDB password");
+		options.add_options()("db_port", po::value<string>(&db_port), "CouchDB port");
+		options.add_options()("db_protocol", po::value<string>(&db_protocol), "CouchDB protocol");
+		options.add_options()("db_provider", po::value<string>(&db_provider), "CouchDB provider");
+		options.add_options()("db_username", po::value<string>(&db_username), "CouchDB username");
   return options;
 }
 
-bool  kafka_process_po(po::variables_map &vm) {
+bool kafka_process_po(po::variables_map &vm) {
   if (vm.count("kafka-brokers")) {
     std::cout << "Kafka Hosts: " << vm["kafka-brokers"].as<string>() << std::endl;
   }
@@ -93,8 +105,13 @@ bool  kafka_process_po(po::variables_map &vm) {
   return true;
 }
 
-bool  ebbrt_process_po(po::variables_map &vm) {
-	bool spawn = false;
+bool couchdb_process_po(po::variables_map &vm) {
+	// TODO: print out CouchDB arguments
+	return true;
+}
+
+bool ebbrt_process_po(po::variables_map &vm) {
+  bool spawn = false;
   if (vm.count("natives")) {
     std::cout << "Native instances to spawn: " << vm["natives"].as<uint8_t>() << std::endl;
   }
@@ -176,7 +193,6 @@ void kafka_test() {
     // Construct the configuration
     Configuration config = {
         { "metadata.broker.list", brokers },
-        { "group.id", group_id },
         // Disable auto commit
         { "enable.auto.commit", false }
     };
@@ -264,6 +280,10 @@ int main(int argc, char **argv) {
 	/** deploy kafka test */ 
   if (kafka_process_po(povm)) {
     kafka_test();
+  }
+
+	/** couchdb settings */ 
+  if (couchdb_process_po(povm)) {
   }
 
   return 0;

@@ -20,34 +20,12 @@ using std::endl;
 namespace po = boost::program_options;
 namespace fs = boost::filesystem;
 
-/** cppkafka */
-#include "cppkafka/utils/buffered_producer.h"
-#include "cppkafka/consumer.h"
-#include "cppkafka/configuration.h"
-#include "cppkafka/producer.h"
-#include "cppkafka/configuration.h"
-#include "cppkafka/metadata.h"
-#include "cppkafka/topic.h"
-
-using cppkafka::BrokerMetadata;
-using cppkafka::BufferedProducer;
-using cppkafka::Configuration;
-using cppkafka::Exception;
-using cppkafka::GroupInformation;
-using cppkafka::GroupMemberInformation;
-using cppkafka::MemberAssignmentInformation;
-using cppkafka::Message;
-using cppkafka::MessageBuilder;
-using cppkafka::Metadata;
-using cppkafka::Producer;
-using cppkafka::Topic;
-using cppkafka::TopicMetadata;
-
 
 /** EbbRT */
 #include <ebbrt/Cpu.h> // ebbrt::Cpu::EarlyInit
 #include "common.h"
 #include "../openwhisk/msg.h"
+#include "../openwhisk/kafka.h"
 
 
 string native_binary_path;
@@ -57,9 +35,6 @@ string zookeeper_hosts;
 namespace { // local
 static char *ExecName = 0;
 
-// Kafka
-string brokers;
-string topic_name;
 
 // CouchDB
 string db_host;
@@ -85,10 +60,10 @@ po::options_description ebbrt_po(){
 po::options_description kafka_po(){
     po::options_description options("Kafka");
     options.add_options()
-        ("kafka-brokers,k",  po::value<string>(&brokers), 
+        ("kafka-brokers,k",  po::value<string>(), 
                        "Kafka brokers")
-        ("kafka-topic,t",    po::value<string>(&topic_name),
-                       "Kafka topic")
+        ("kafka-topic,t",    po::value<uint64_t>(),
+                       "Invoker Id")
         ;
   return options;
 }
@@ -108,15 +83,6 @@ po::options_description couchdb_po() {
   return options;
 }
 
-bool kafka_process_po(po::variables_map &vm) {
-  if (vm.count("kafka-brokers")) {
-    std::cout << "Kafka Hosts: " << vm["kafka-brokers"].as<string>() << std::endl;
-  }
-  if (vm.count("kafka-topic")) {
-    std::cout << "Kafka Topic: " << vm["kafka-topic"].as<string>() << std::endl;
-  }
-  return true;
-}
 
 bool couchdb_process_po(po::variables_map &vm) {
 	// TODO: print out CouchDB arguments
@@ -149,121 +115,6 @@ void msg_test(){
   openwhisk::msg::ActivationMessage AM(sample_json_action);
   cout << "ActivationMessage JSON output:" << endl << AM.to_json() << endl;
 }
-
-void kafka_test() {
-		cout << "Running the Kafka test..." << endl;
-    // Stop processing on SIGINT
-    signal(SIGINT, [](int) { exit(0); });
-
-    // Construct the configuration
-    Configuration config = {
-        { "metadata.broker.list", brokers }
-    };
-
-#if 0
-    BufferedProducer<string> producer(config);
-    // Set a produce success callback
-    producer.set_produce_success_callback([](const Message& msg) {
-        cout << "Successfully produced message with payload " << msg.get_payload() << endl;
-    });
-    // Set a produce failure callback
-    producer.set_produce_failure_callback([](const Message& msg) {
-        cout << "Failed to produce message with payload " << msg.get_payload() << endl;
-        // Return false so we stop trying to produce this message
-        return false;
-    });
-#endif
-
-    // Create the producer
-    Producer producer(config);
-    Metadata metadata = producer.get_metadata();
-
-    cout << "Found the following brokers: " << endl;
-    for (const BrokerMetadata& broker : metadata.get_brokers()) {
-        cout << "* " << broker.get_host() << endl;
-    }
-    cout << endl;
-    cout << "Found the following topics: " << endl;
-    for (const TopicMetadata& topic : metadata.get_topics()) {
-        cout << "* " << topic.get_name() << ": " << topic.get_partitions().size()
-             << " partitions" << endl;
-    }
-
-    cout << "Entering ping loop..." << endl;
-  while(1){
-    // Create a message builder for this topic
-    MessageBuilder builder("health");
-    auto pl = std::string("{\"name\":{\"instance\":0,\"name\":\"0\"}}");
-    builder.payload(pl);
-    producer.produce(builder);
-
-    std::this_thread::sleep_for (std::chrono::seconds(1));
-  }
-  //std::thread hl (kafka_health_loop);
-  //hl.join();  
-
-#if 0
-    // Now read lines and write them into kafka
-    string line;
-    while (getline(cin, line)) {
-        // Set the payload on this builder
-        builder.payload(line);
-
-        // Actually produce the message we've built
-        producer.produce(builder);
-    }
-    // Construct the configuration
-    Configuration config = {
-        { "metadata.broker.list", brokers },
-        // Disable auto commit
-        { "enable.auto.commit", false }
-    };
-
-    // Create the consumer
-    Consumer consumer(config);
-
-    // Print the assigned partitions on assignment
-    consumer.set_assignment_callback([](const TopicPartitionList& partitions) {
-        cout << "Got assigned: " << partitions << endl;
-    });
-
-    // Print the revoked partitions on revocation
-    consumer.set_revocation_callback([](const TopicPartitionList& partitions) {
-        cout << "Got revoked: " << partitions << endl;
-    });
-
-    // Subscribe to the topic
-    consumer.subscribe({ topic_name });
-
-    cout << "Consuming messages from topic " << topic_name << endl;
-
-    // Now read lines and write them into kafka
-    while (running) {
-        // Try to consume a message
-        Message msg = consumer.poll();
-        if (msg) {
-            // If we managed to get a message
-            if (msg.get_error()) {
-                // Ignore EOF notifications from rdkafka
-                if (!msg.is_eof()) {
-                    cout << "[+] Received error notification: " << msg.get_error() << endl;
-                }
-            }
-            else {
-                // Print the key (if any)
-                if (msg.get_key()) {
-                    cout << msg.get_key() << " -> ";
-                }
-                // Print the payload
-                cout << msg.get_payload() << endl;
-                // Now commit the message
-                consumer.commit(msg);
-            }
-        }
-    }
-#endif
-}
-
 
 int main(int argc, char **argv) {
   void *status;
@@ -302,12 +153,13 @@ int main(int argc, char **argv) {
   }
 
 	/** deploy kafka test */ 
-  if (kafka_process_po(povm)) {
-    kafka_test();
+  if (openwhisk::kafka_init(povm)) {
+    return 1;
   }
 
 	/** couchdb settings */ 
   if (couchdb_process_po(povm)) {
+    return 1;
   }
 
   return 0;

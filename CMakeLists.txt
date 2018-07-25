@@ -19,6 +19,7 @@ set(SOURCES
 set(HOSTED_SOURCES
       ${SOURCES}
 			src/openwhisk/msg.cc
+			src/openwhisk/kafka.cc
       src/hosted/main.cc)
 
 # native-only

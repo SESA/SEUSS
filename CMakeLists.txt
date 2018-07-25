@@ -6,7 +6,7 @@ set(CMAKE_CXX_FLAGS_DEBUG          "-O0 -g3")
 set(CMAKE_CXX_FLAGS_MINSIZEREL     "-Os -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE        "-O4 -flto -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g3")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++14 -Wall -Werror")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++14 -Wall ") #-Werror
 
 ## Sources
 # shared 
@@ -18,6 +18,7 @@ set(SOURCES
 # hosted-only
 set(HOSTED_SOURCES
       ${SOURCES}
+			src/openwhisk/msg.cc
       src/hosted/main.cc)
 
 # native-only
@@ -51,13 +52,21 @@ elseif( ${CMAKE_SYSTEM_NAME} STREQUAL "Linux" )
   # cppkafka - requires librdkafka at CMAKE_PREFIX_PATH
   find_library(CPPKAFKA_LIBRARIES NAMES cppkafka)
 
-  # pillowtalk
+  # pillowtalk - couchDB client
   find_library(PILLOWTALK_LIBRARIES NAMES pillowtalk)
 
+  # yajl - json generator/parser
+  find_path(YAJL_INCLUDE_DIR yajl/yajl_parse.h)
+  find_file(YAJL_VERSION yajl/yajl_version.h)
+  find_library(YAJL_LIBRARY NAMES yajl)
+  message("-- Found yajl Include Dir:" ${YAJL_INCLUDE_DIR})
+  message("-- Found yajl Library:" ${YAJL_LIBRARY})
+  message("-- Found yajl Version File:" ${YAJL_VERSION})
+
 	## seuss target
-  include_directories(${EBBRT_INCLUDE_DIRS} ${RDKAFKA_INCLUDE_DIR})
+  include_directories(${EBBRT_INCLUDE_DIRS} ${RDKAFKA_INCLUDE_DIR} ${YAJL_INCLUDE_DIR})
   add_executable(seuss ${HOSTED_SOURCES})
-  target_link_libraries(seuss ${CPPKAFKA_LIBRARIES} ${PILLOWTALK_LIBRARIES} ${EBBRT_LIBRARIES}
+  target_link_libraries(seuss ${CPPKAFKA_LIBRARIES} ${PILLOWTALK_LIBRARIES} ${YAJL_LIBRARY} ${EBBRT_LIBRARIES}
     ${CAPNP_LIBRARIES_LITE} ${CMAKE_THREAD_LIBS_INIT} ${EBBRT-ZOOKEEPER_LIBRARIES} 
     ${Boost_LIBRARIES} ${TBB_LIBRARIES} ${EBBRT_LIBRARIES}
   )

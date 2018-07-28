@@ -5,11 +5,15 @@
 #define SEUSS_OPENWHISK_KAFKA_H_
 
 #include <boost/program_options.hpp>
+#include "cppkafka/configuration.h"
 
 namespace openwhisk {
 
-void heartbeat();
-uint8_t kafka_init(boost::program_options::variables_map &vm);
+constexpr size_t ping_freq_ms = 1000;
+
+void ping_producer_loop(const cppkafka::Configuration& config, uint64_t invoker_id);
+void activation_consumer_loop(const cppkafka::Configuration& config, uint64_t invoker_id);
+bool kafka_init(boost::program_options::variables_map &vm);
 
 
 } // end namespace openwhisk

@@ -59,6 +59,7 @@ public:
 
 class ActivationMessage {
 public:
+  ActivationMessage(){};
   explicit ActivationMessage(std::string json_input);
   TransactionId transid_;
   InstanceId rootControllerIndex_;
@@ -79,28 +80,33 @@ public:
 class Response {
 public:
   /* TODO: logs[], annotations [{},] */
-  long long duration_;
-  std::string name_;
-  std::string subject_;
+  /* metadata */
   std::string activationId_;
-  bool publish_;
-  std::string version_;
-  long long end_;
-  long long start_;
+  std::string name_;
   std::string namespace_;
+  std::string publish_ = "false";
+  std::string subject_;
+  std::string version_;
+  /* execution data */
+  long long duration_;
+  long long start_;
+  long long end_;
+  long long status_code_;
   std::string to_json() const {
     return "{\"duration\":" + std::to_string(duration_) + ",\"name\":\"" +
            name_ + "\"" + ",\"subject\":\"" + subject_ + "\"" +
            ",\"activationId\":\"" + activationId_ + "\"" + ",\"publish\":" +
-           std::to_string(publish_) + ",\"version\":\"" + version_ + "\"" +
+           publish_ + ",\"version\":\"" + version_ + "\"" +
            ",\"end\":" + std::to_string(end_) + ",\"start\":" +
-           std::to_string(start_) + ",\"namespace\":\"" + namespace_ + "\"" +
-           "}";
+           std::to_string(start_) + ",\"namespace\":\"" + namespace_ + "\"" + ",\"response\":{\"statusCode\":" +std::to_string(status_code_) +
+           "},\"logs\":[],\"annotations\":[]}";
   };
 };
 
 class CompletionMessage {
 public:
+  CompletionMessage(){}
+  explicit CompletionMessage(ActivationMessage);
   TransactionId transid_;
   Response response_;
   InstanceId invoker_;

@@ -35,7 +35,6 @@ string zookeeper_hosts;
 namespace { // local
 static char *ExecName = 0;
 
-
 // CouchDB
 string db_host;
 string db_password;
@@ -85,7 +84,19 @@ po::options_description couchdb_po() {
 
 
 bool couchdb_process_po(po::variables_map &vm) {
-	// TODO: print out CouchDB arguments
+  std::cout << "Database Config:" << std::endl;
+  if (vm.count("db_host"))
+    std::cout << "db_host: " << db_host << std::endl;
+  if (vm.count("db_username"))
+    std::cout << "db-username: " << db_username << std::endl;
+  if (vm.count("db_password"))
+    std::cout << "db-password: " << db_password << std::endl;
+  if (vm.count("db_port"))
+    std::cout << "db-port: " << db_port << std::endl;
+  if (vm.count("db_protocol"))
+    std::cout << "db-protocol: " << db_protocol << std::endl;
+  if (vm.count("db_provider"))
+    std::cout << "db-provider: " << db_provider << std::endl;
 	return true;
 }
 
@@ -119,6 +130,9 @@ void msg_test(){
 int main(int argc, char **argv) {
   void *status;
   ExecName = argv[0];
+    std::cout << "********************************************" << std::endl;
+    std::cout << "  Loading SEUSS OpenWhisk Invoker "<< std::endl;
+    std::cout << "********************************************" << std::endl;
 
   uint32_t port;
   /* process program options */
@@ -143,24 +157,27 @@ int main(int argc, char **argv) {
     return 0;
   }
 
-  msg_test();
-
-  /** deploy ebbrt runtime  & backends */
-  if (ebbrt_process_po(povm)) {
-    pthread_t tid = ebbrt::Cpu::EarlyInit(1);
-    pthread_join(tid, &status);
-    return 0;
-  }
-
 	/** deploy kafka test */ 
-  if (openwhisk::kafka_init(povm)) {
-    return 1;
+  if (!openwhisk::kafka_init(povm)) {
+    std::cerr << "Error: kafka init " << std::endl; 
   }
 
 	/** couchdb settings */ 
-  if (couchdb_process_po(povm)) {
-    return 1;
+  if (!couchdb_process_po(povm)) {
+    std::cerr << "Error: couchdb init " << std::endl; 
   }
 
+  std::cerr << "Warning, entering while(1)..." << std::endl; 
+  while(1);
+
+#if 0
+  /** deploy ebbrt runtime  & backends */
+  if (!ebbrt_process_po(povm)) {
+    // 
+    std::cerr << "Error: ebbrt init " << std::endl; 
+  }
+  pthread_t tid = ebbrt::Cpu::EarlyInit(1);
+  pthread_join(tid, &status);
+#endif
   return 0;
 }

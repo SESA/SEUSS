@@ -9,6 +9,16 @@
 
 using namespace std;
 
+openwhisk::msg::CompletionMessage::CompletionMessage( openwhisk::msg::ActivationMessage am ){
+  transid_ = am.transid_;
+  invoker_ = am.rootControllerIndex_; 
+  response_.activationId_ = am.activationId_;
+  response_.name_ = am.action_.name_;
+  response_.namespace_ = am.user_.namespace_;
+  response_.subject_ = am.user_.subject_;
+  response_.version_ = am.action_.version_;
+}
+
 openwhisk::msg::ActivationMessage::ActivationMessage( string json ){
   const char *a_path[] = {"activationId", (const char *)0};
   const char *r_path[] = {"revision", (const char *)0};

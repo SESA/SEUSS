@@ -4,6 +4,7 @@
 #include <thread>
 #include <vector>
 
+#include "db.h"
 #include "kafka.h"
 #include "msg.h"
 
@@ -104,19 +105,8 @@ void openwhisk::activation_consumer_loop(const Configuration& config, uint64_t i
   Consumer kafka_consumer(config);
   Producer kafka_producer(config);
   std::string default_topic = "invoker"+std::to_string(invoker_id);
-
   cout << "kafka: consumer subscribe to:" << default_topic << endl;
   kafka_consumer.subscribe({ default_topic });
-
-#if 0
-  kafka_consumer.set_assignment_callback([](const TopicPartitionList& partitions) {
-      cout << "kafka; consumer assignment callback: " << partitions << endl;
-  });
-  // Print the revoked partitions on revocation
-  kafka_consumer.set_revocation_callback([](const TopicPartitionList& partitions) {
-      cout << "Kafka consumer Got revoked: " << partitions << endl;
-  });
-#endif
 
   // Stream in Activation messages 
   while (1) {
@@ -144,11 +134,15 @@ void openwhisk::activation_consumer_loop(const Configuration& config, uint64_t i
         cout << "MSG PARS: " << am.to_json() << endl;
         // Create a response
         msg::CompletionMessage cm(am);
-        cm.response_.duration_ = 0;
+        cm.response_.duration_ = 999;
         cm.response_.start_ = 0;
         cm.response_.end_ = 0;
         cm.response_.status_code_ = 0;
+        // Pull data from DB
+        auto code = db::get_action(am.action_);
+        cout << endl << "```" << endl << code << endl << "```" << endl;
 
+        // Send response
         MessageBuilder builder("completed0");
         auto pl = cm.to_json();
         builder.payload(pl);
@@ -173,7 +167,6 @@ bool openwhisk::kafka_init(po::variables_map &vm) {
 
   std::cout << "kafka: hosts " << brokers << std::endl;
   std::cout << "kafka: invoker #" << std::to_string(invoker_id) << std::endl;
-
   if (brokers.empty() ) {
     std::cerr << "kafka: Error - incomplete configuration " << std::endl;
     return false;
@@ -184,19 +177,6 @@ bool openwhisk::kafka_init(po::variables_map &vm) {
   std::string default_topic = "invoker"+std::to_string(invoker_id);
   cout << "kafka: create new topic: " << default_topic << endl;
   kafka_producer.get_topic(default_topic);
-
-#if 0
-  try{
-  msg::ActivationMessage am;
-    MessageBuilder builder(default_topic);
-    auto pl = am.to_json();
-    builder.payload(pl);
-    kafka_producer.produce(builder);
-  cout << "kafka: new topic create? "<< endl;
-  } catch (const Exception &ex) {
-    cout << "Error create topic: " << ex.what() << endl;
-  }
-#endif
 
   /** Start prodcucer/consumer loops */
   std::thread t(ping_producer_loop, config, invoker_id);

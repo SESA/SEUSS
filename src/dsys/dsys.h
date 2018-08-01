@@ -4,14 +4,25 @@
 #ifndef DSYS_DSYS_H_
 #define DSYS_DSYS_H_
 
+#include <string>
+#include <boost/program_options.hpp>
+namespace po = boost::program_options;
+
 /** dsys.h
-  * Distributed system interface
+  * Interface to the distributed system of the ebbrt instance 
   */
 
 #include "Controller.h"
 #include "MemberSet.h"
 
+namespace ebbrt {
 namespace dsys {
+
+// Global configuration
+extern std::string  native_binary_path;
+extern std::string  zookeeper_host;
+extern uint16_t initial_instance_count;
+extern bool local_init;
 
 #ifdef __ebbrt__
   using IpAddr =  ebbrt::Ipv4Address;
@@ -20,14 +31,8 @@ namespace dsys {
 #endif
   using MemberId = std::string;
 
-static inline void Init(){
-  auto tr = new Controller(Controller::global_id);
-  Controller::Create(tr, Controller::global_id);
-  controller->Init();
-#if __ebbrt__ 
-  controller->Join();
-#endif
-}
+void Init();
+
 
 /** get_member_address Returns IpAddr of Member */
 static inline IpAddr get_member_ip(MemberId mid) {
@@ -48,6 +53,15 @@ static inline IpAddr get_member_ip(MemberId mid) {
   return boost::asio::ip::address_v4::from_string(mid);
 #endif
 }
-}
+
+/* Program Options */
+po::options_description program_options();
+bool process_program_options(po::variables_map &vm);
+
+
+
+
+} // namespace dsys
+} // namespace ebbrt
 
 #endif //DSYS_DSYS_H_

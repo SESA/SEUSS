@@ -13,6 +13,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++14 -Wall ") #-Werror
 set(SOURCES
       src/InstallGlobalIdMap.cc
       src/dsys/Controller.cc
+      src/dsys/dsys.cc
       src/seuss.cc )
 
 # hosted-only

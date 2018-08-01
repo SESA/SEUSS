@@ -15,10 +15,12 @@
 
 #include "MemberSet.h"
 
+namespace ebbrt {
 namespace dsys {
   using MemberId = std::string;
 
-/** dsys::Controller is the local representive in the distributed system
+/** dsys::Controller 
+  * The dsys controller is local handle to the distributed system at large
   *
   */
 class Controller : public ebbrt::SharedEbb<Controller>,
@@ -30,10 +32,15 @@ public:
   Controller(ebbrt::EbbId id) : MemberSet<Controller>(id){};
   void MemberSetEventMemberAdd(MemberId id) override;
   void MemberSetEventMemberDelete(MemberId id) override;
+  
+  void AllocateNativeInstances(std::string binary_path);
+private:
+  std::vector<ebbrt::NodeAllocator::NodeDescriptor> node_descriptors_;
 };
 
 constexpr auto controller =
     ebbrt::EbbRef<Controller>(Controller::global_id);
 
-} // dsys
+} // namespace dsys
+} // namespace ebbrt
 #endif //DSYS_CONTROLLER_H_

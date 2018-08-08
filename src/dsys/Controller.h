@@ -7,6 +7,7 @@
 #include <ebbrt/native/Net.h>
 #else
 #include <boost/asio.hpp>
+#include <ebbrt/hosted/NodeAllocator.h>
 #endif
 
 #include <ebbrt/EbbId.h>
@@ -33,9 +34,11 @@ public:
   void MemberSetEventMemberAdd(MemberId id) override;
   void MemberSetEventMemberDelete(MemberId id) override;
   
+#ifndef __ebbrt__
   void AllocateNativeInstances(std::string binary_path);
-private:
   std::vector<ebbrt::NodeAllocator::NodeDescriptor> node_descriptors_;
+#endif
+
 };
 
 constexpr auto controller =

@@ -4,7 +4,6 @@
 #include <iostream>
 #include "Controller.h"
 
-#include <ebbrt/hosted/NodeAllocator.h>
 
 void
 ebbrt::dsys::Controller::MemberSetEventMemberAdd(MemberId id) {
@@ -16,6 +15,7 @@ ebbrt::dsys::Controller::MemberSetEventMemberDelete(MemberId id) {
   std::cout << "<dsys> Member removed (" << id << ")" << std::endl;
 }
 
+#ifndef __ebbrt__
 void
 ebbrt::dsys::Controller::AllocateNativeInstances(std::string binary_path) {
 
@@ -33,3 +33,4 @@ ebbrt::dsys::Controller::AllocateNativeInstances(std::string binary_path) {
   });
   node_descriptors_.emplace_back(std::move(node_desc));
 }
+#endif

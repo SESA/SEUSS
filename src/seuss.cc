@@ -12,7 +12,7 @@
 void AppMain() {
   ebbrt::kprintf("Entered App Main \n");
   // TODO: Block until the ZKGidMap is online
-  ebbrt::event_manager->Spawn([]() { dsys::Init(); });
+  ebbrt::event_manager->Spawn([]() { ebbrt::dsys::Init(); });
 }
 
 #else // hosted (linux)
@@ -27,11 +27,9 @@ using std::endl;
 
 #include "dsys/dsys.h"
 
-using namespace ebbrt;
-
 void AppMain() {
 
-  dsys::Init(); // Static Ebb constructor
+  ebbrt::dsys::Init(); // Static Ebb constructor
 
 }
 #endif

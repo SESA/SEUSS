@@ -3,10 +3,14 @@
 //          http://www.boost.org/LICENSE_1_0.txt)
 #ifndef DSYS_DSYS_H_
 #define DSYS_DSYS_H_
-
 #include <string>
+
+#ifndef __ebbrt__
 #include <boost/program_options.hpp>
+#include <boost/filesystem.hpp>
 namespace po = boost::program_options;
+namespace fs = boost::filesystem;
+#endif
 
 /** dsys.h
   * Interface to the distributed system of the ebbrt instance 
@@ -54,12 +58,11 @@ static inline IpAddr get_member_ip(MemberId mid) {
 #endif
 }
 
+#ifndef __ebbrt__
 /* Program Options */
 po::options_description program_options();
 bool process_program_options(po::variables_map &vm);
-
-
-
+#endif
 
 } // namespace dsys
 } // namespace ebbrt

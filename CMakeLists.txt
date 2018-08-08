@@ -41,6 +41,7 @@ if( ${CMAKE_SYSTEM_NAME} STREQUAL "EbbRT")
   target_link_libraries(seuss.elf ${EBBRT-ZOOKEEPER_LIBRARIES} ${EBBRT-SOCKET_LIBRARIES})
   add_custom_command(TARGET seuss.elf POST_BUILD
     COMMAND objcopy -O elf32-i386 seuss.elf seuss.elf32 )
+  set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES seuss.elf32 )
 
 ## Hosted  ===========================================================
 elseif( ${CMAKE_SYSTEM_NAME} STREQUAL "Linux" )

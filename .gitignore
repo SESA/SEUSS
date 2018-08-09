@@ -30,6 +30,12 @@
 *.exe
 *.out
 *.app
+
+# Project specific
 build/
-local
+local/
 native
+CMakeCache.txt
+Makefile
+build_native/
+seuss

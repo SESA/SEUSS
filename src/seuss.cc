@@ -38,6 +38,6 @@ void AppMain() {
   ebbrt::dsys::Init(); // Static Ebb constructor
   auto rep = new SeussChannel(SeussChannel::global_id);
   SeussChannel::Create(rep, SeussChannel::global_id);
-  //openwhisk::kafka_init();
+  openwhisk::connect();
 }
 #endif

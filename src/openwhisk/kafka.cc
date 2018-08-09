@@ -1,6 +1,6 @@
+#include <chrono>
 #include <iostream>
 #include <stdexcept>
-#include <chrono>
 #include <thread>
 #include <vector>
 
@@ -38,10 +38,15 @@ using cppkafka::TopicPartitionList;
 
 namespace {
 string kafka_broker;
-uint64_t invoker_id;
-} // end local namespace
+uint64_t invoker_id = 0;
+Configuration config;
+} // end local 
 
-void openwhisk::kafka::ping_producer_loop(const Configuration &config, uint64_t invoker_id) {
+void openwhisk::kafka::ping_producer_loop() {
+  if (kafka_broker.empty() ) {
+    std::cerr << "kafka error - No broker, cannot start ping loop." << std::endl;
+    return;
+  }
 
   Producer kafka_producer(config);
   msg::PingMessage ping;
@@ -102,7 +107,11 @@ void openwhisk::kafka::ping_producer_loop(const Configuration &config, uint64_t 
   }
 }
 
-void openwhisk::kafka::activation_consumer_loop(const Configuration& config, uint64_t invoker_id ){
+void openwhisk::kafka::activation_consumer_loop(){
+  if (kafka_broker.empty() ) {
+    std::cerr << "kafka error - No broker, cannot start consumer loop." << std::endl;
+    return;
+  }
 
   // Create the invoker topic and consumer
   Consumer kafka_consumer(config);
@@ -170,9 +179,6 @@ bool openwhisk::kafka::init(po::variables_map &vm) {
   if (vm.count("kafka-topic"))
     invoker_id = vm["kafka-topic"].as<uint64_t>();
 
-  Configuration config = {{"metadata.broker.list", kafka_broker},
-                          {"group.id", invoker_id}};
-
   std::cout << "kafka: hosts " << kafka_broker << std::endl;
   std::cout << "kafka: invoker #" << std::to_string(invoker_id) << std::endl;
   if (kafka_broker.empty() ) {
@@ -180,16 +186,14 @@ bool openwhisk::kafka::init(po::variables_map &vm) {
     return false;
   }
 
+  config = {{"metadata.broker.list", kafka_broker},
+                          {"group.id", invoker_id}};
+
   /** New producer and topic confiuguration */
   Producer kafka_producer(config);
   std::string default_topic = "invoker"+std::to_string(invoker_id);
   cout << "kafka: create new topic: " << default_topic << endl;
   kafka_producer.get_topic(default_topic);
 
-  /** Start prodcucer/consumer loops */
-  std::thread t(ping_producer_loop, config, invoker_id);
-  t.detach();
-  std::thread t1(activation_consumer_loop, config, invoker_id);
-  t1.detach();
   return true;
 }

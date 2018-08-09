@@ -14,24 +14,25 @@ namespace openwhisk {
 
 constexpr size_t ping_freq_ms = 1000;
 
+/* Kafka options & setup */
 namespace kafka {
 bool init(po::variables_map &vm);
 po::options_description program_options();
-void ping_producer_loop(const cppkafka::Configuration &config,
-                        uint64_t invoker_id);
-void activation_consumer_loop(const cppkafka::Configuration &config,
-                              uint64_t invoker_id);
+void ping_producer_loop();
+void activation_consumer_loop();
 } // end namespace kafka
 
+/* CouchDB options & setup */
 namespace couchdb {
 bool init(po::variables_map &vm);
 po::options_description program_options();
 std::string get_action(msg::Action action);
 } // end namespace couchdb
 
-/* Program Options */
+/* Openwhisk options & setup */
 po::options_description program_options(); 
 bool process_program_options(po::variables_map &vm);
+void connect();
 
 } // end namespace openwhisk
 #endif // SEUSS_OPENWHISK_OPENWHISK_H_

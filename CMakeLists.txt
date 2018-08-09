@@ -20,9 +20,10 @@ set(SOURCES
 # hosted-only
 set(HOSTED_SOURCES
       ${SOURCES}
-			src/openwhisk/db.cc
+			src/openwhisk/couchdb.cc
 			src/openwhisk/kafka.cc
 			src/openwhisk/msg.cc
+			src/openwhisk/openwhisk.cc
       src/hosted/main.cc)
 
 # native-only

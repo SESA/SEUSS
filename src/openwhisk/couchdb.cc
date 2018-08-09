@@ -8,7 +8,7 @@
 #include <pillowtalk.h>
 #include <yajl/yajl_tree.h>
 
-#include "db.h"
+#include "openwhisk.h"
 
 using namespace std;
 
@@ -22,7 +22,7 @@ string db_username;
 string db_address;
 } // end local namespace
 
-po::options_description openwhisk::db::couchdb_po() {
+po::options_description openwhisk::couchdb::program_options() {
   po::options_description options("CouchDB");
   options.add_options()("db_host", po::value<string>(&db_host), "CouchDB host");
   options.add_options()("db_password", po::value<string>(&db_password),
@@ -37,7 +37,7 @@ po::options_description openwhisk::db::couchdb_po() {
   return options;
 }
 
-bool openwhisk::db::couchdb_process_po(po::variables_map &vm) {
+bool openwhisk::couchdb::init(po::variables_map &vm) {
   std::cout << "Database Config:" << std::endl;
   if (vm.count("db_host"))
     std::cout << "db_host: " << db_host << std::endl;
@@ -59,7 +59,7 @@ bool openwhisk::db::couchdb_process_po(po::variables_map &vm) {
 	return true;
 }
 
-std::string openwhisk::db::get_action( openwhisk::msg::Action action ){
+std::string openwhisk::couchdb::get_action( openwhisk::msg::Action action ){
   std::string function_code = "";
   pt_response_t* response = NULL;
   pt_init();

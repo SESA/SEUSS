@@ -4,9 +4,7 @@
 #include <thread>
 #include <vector>
 
-#include "db.h"
-#include "kafka.h"
-#include "msg.h"
+#include "openwhisk.h"
 
 #include "cppkafka/configuration.h"
 #include "cppkafka/consumer.h"
@@ -38,7 +36,12 @@ using cppkafka::TopicMetadata;
 using cppkafka::TopicPartition;
 using cppkafka::TopicPartitionList;
 
-void openwhisk::ping_producer_loop(const Configuration &config, uint64_t invoker_id) {
+namespace {
+string kafka_broker;
+uint64_t invoker_id;
+} // end local namespace
+
+void openwhisk::kafka::ping_producer_loop(const Configuration &config, uint64_t invoker_id) {
 
   Producer kafka_producer(config);
   msg::PingMessage ping;
@@ -99,7 +102,7 @@ void openwhisk::ping_producer_loop(const Configuration &config, uint64_t invoker
   }
 }
 
-void openwhisk::activation_consumer_loop(const Configuration& config, uint64_t invoker_id ){
+void openwhisk::kafka::activation_consumer_loop(const Configuration& config, uint64_t invoker_id ){
 
   // Create the invoker topic and consumer
   Consumer kafka_consumer(config);
@@ -139,7 +142,7 @@ void openwhisk::activation_consumer_loop(const Configuration& config, uint64_t i
         cm.response_.end_ = 0;
         cm.response_.status_code_ = 0;
         // Pull data from DB
-        auto code = db::get_action(am.action_);
+        auto code = couchdb::get_action(am.action_);
         cout << endl << "```" << endl << code << endl << "```" << endl;
 
         // Send response
@@ -153,21 +156,26 @@ void openwhisk::activation_consumer_loop(const Configuration& config, uint64_t i
   }
 }
 
-bool openwhisk::kafka_init(po::variables_map &vm) {
-  string brokers;
-  uint64_t invoker_id = 0;
-  // TODO: make the invoker id option required 
+
+po::options_description openwhisk::kafka::program_options() {
+  po::options_description options("Kafka");
+  options.add_options()("kafka-brokers,k", po::value<string>(),"kafka host")
+                       ("kafka-topic,t", po::value<uint64_t>(), "invoker Id");
+  return options;
+}
+
+bool openwhisk::kafka::init(po::variables_map &vm) {
   if (vm.count("kafka-brokers"))
-    brokers = vm["kafka-brokers"].as<string>();
+    kafka_broker = vm["kafka-brokers"].as<string>();
   if (vm.count("kafka-topic"))
     invoker_id = vm["kafka-topic"].as<uint64_t>();
 
-  Configuration config = {{"metadata.broker.list", brokers},
+  Configuration config = {{"metadata.broker.list", kafka_broker},
                           {"group.id", invoker_id}};
 
-  std::cout << "kafka: hosts " << brokers << std::endl;
+  std::cout << "kafka: hosts " << kafka_broker << std::endl;
   std::cout << "kafka: invoker #" << std::to_string(invoker_id) << std::endl;
-  if (brokers.empty() ) {
+  if (kafka_broker.empty() ) {
     std::cerr << "kafka: Error - incomplete configuration " << std::endl;
     return false;
   }

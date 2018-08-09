@@ -4,10 +4,14 @@
 #include <iostream>
 #include "Controller.h"
 
+#include "../SeussChannel.h"
 
 void
 ebbrt::dsys::Controller::MemberSetEventMemberAdd(MemberId id) {
   std::cout << "<dsys> Member added (" << id << ")" << std::endl;
+#ifndef __ebbrt__
+  seuss_channel->Ping(ebbrt::Messenger::NetworkId(get_member_ip(id)));
+#endif
 }
 
 void

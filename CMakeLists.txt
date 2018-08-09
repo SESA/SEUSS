@@ -14,6 +14,7 @@ set(SOURCES
       src/InstallGlobalIdMap.cc
       src/dsys/Controller.cc
       src/dsys/dsys.cc
+      src/SeussChannel.cc
       src/seuss.cc )
 
 # hosted-only

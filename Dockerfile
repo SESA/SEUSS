@@ -36,6 +36,10 @@ RUN cmake . && make -j && make install && make clean
 RUN rm -rf /tmp/seuss
 RUN rm -rf /tmp/cmake-3.6.2*
 
+# install additional depends
+# TODO(jmcadden): move these to the root Dockerfile (ebbrt/hosted)
+RUN yum install -yq docker iproute
+
 # seuss 
 RUN git clone http://www.github.com/sesa/seuss  /root/seuss
 WORKDIR /root/seuss

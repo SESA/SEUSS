@@ -3,6 +3,8 @@
 //          http://www.boost.org/LICENSE_1_0.txt)
 #include <thread>
 
+#include <ebbrt/EventManager.h>
+#include <ebbrt/Cpu.h>
 #include "openwhisk.h"
 
 po::options_description openwhisk::program_options() {
@@ -16,11 +18,12 @@ bool openwhisk::process_program_options(po::variables_map &vm) {
   return (couchdb::init(vm) && kafka::init(vm));
 };
 
-void openwhisk::connect(){
-  /** Start producer/consumer loops */
-  std::thread t(kafka::ping_producer_loop);// config, invoker_id);
-  t.detach();
-  std::thread t1(kafka::activation_consumer_loop);//, config, invoker_id);
-  t1.detach();
+void openwhisk::connect() {
+  auto ping_cpu = ebbrt::Cpu::GetByIndex(thread::ping);
+  ebbrt::event_manager->Spawn([]() { kafka::ping_producer_loop(); },
+                              ping_cpu->get_context(), true);
+  auto action_cpu = ebbrt::Cpu::GetByIndex(thread::action);
+  ebbrt::event_manager->Spawn([]() { kafka::activation_consumer_loop(); },
+                              action_cpu->get_context(), true);
   return;
 }

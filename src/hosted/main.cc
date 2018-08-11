@@ -2,7 +2,6 @@
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
-
 #include <cinttypes> // PRId64, etc
 #include <csignal>
 #include <iostream>
@@ -14,7 +13,6 @@ using std::string;
 using std::cout;
 using std::endl;
 
-/** boost */
 #include <boost/program_options.hpp>
 namespace po = boost::program_options;
 
@@ -22,18 +20,6 @@ namespace po = boost::program_options;
 #include <ebbrt/Cpu.h> // ebbrt::Cpu::EarlyInit
 #include "../dsys/dsys.h"
 #include "../openwhisk/openwhisk.h"
-
-
-po::options_description kafka_po(){
-    po::options_description options("Kafka");
-    options.add_options()
-        ("kafka-brokers,k",  po::value<string>(), 
-                       "Kafka brokers")
-        ("kafka-topic,t",    po::value<uint64_t>(),
-                       "Invoker Id")
-        ;
-  return options;
-}
 
 int main(int argc, char **argv) {
   std::cout << "********************************************" << std::endl;
@@ -67,18 +53,18 @@ int main(int argc, char **argv) {
 
   /** Initialize openwhisk with input arguments */
   if (!openwhisk::process_program_options(povm)) {
-    std::cerr << "Error: openwhisk initialization failed" << std::endl; 
+    std::cerr << "Warning: openwhisk initialization failed" << std::endl; 
   }
 
   /** Initialize ebbrt dsys with input arguments */
   if (!ebbrt::dsys::process_program_options(povm)) {
-    std::cerr << "Error: EbbRT initialization failed " << std::endl; 
+    std::cerr << "Warning: EbbRT initialization failed " << std::endl; 
   }
 
   /** Start EbbRT runtime */
   void *status;
   pthread_t tid =
-      ebbrt::Cpu::EarlyInit((1 + ebbrt::dsys::initial_instance_count));
+      ebbrt::Cpu::EarlyInit((1 + openwhisk::thread_count + ebbrt::dsys::initial_instance_count));
   pthread_join(tid, &status);
   return 0;
 }

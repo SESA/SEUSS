@@ -4,6 +4,9 @@
 #include <thread>
 #include <vector>
 
+#include "../SeussChannel.h"
+#include <ebbrt/Cpu.h>
+
 #include "openwhisk.h"
 
 #include "cppkafka/configuration.h"

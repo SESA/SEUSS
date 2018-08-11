@@ -12,6 +12,13 @@ namespace po = boost::program_options;
 
 namespace openwhisk {
 
+constexpr size_t thread_count = 2;
+
+enum thread : size_t {
+  ping = 1, 
+  action = 2 
+};
+
 constexpr size_t ping_freq_ms = 1000;
 
 /* Kafka options & setup */

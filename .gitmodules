@@ -14,3 +14,6 @@
 	path = ext/EbbRT
 	url = http://www.github.com/jmcadden/EbbRT
 	branch = container_deploy
+[submodule "src/umm"]
+	path = src/umm
+	url = git@github.com:SESA/Umm.git

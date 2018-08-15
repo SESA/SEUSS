@@ -15,29 +15,31 @@
 
 #include "dsys/dsys.h"
 
-#if __ebbrt__ // native
-#else // hosted (linux)
-#endif
-
 enum SeussMsgType : uint8_t {
   ping = 0,
   request,
   reply,
 };
 
-struct SeussMsg {
+struct SeussMsgHeader {
   SeussMsgType type;
+  uint64_t id;
+  size_t msg_len;
 };
 
+//TODO(jmcadden): make this a multi-node Ebb
 class SeussChannel : public ebbrt::Messagable<SeussChannel>,
                      public ebbrt::SharedEbb<SeussChannel> {
 public:
   static const ebbrt::EbbId global_id =
       ebbrt::GenerateStaticEbbId("SeussChannel");
-  // Constructor
   SeussChannel(ebbrt::EbbId ebbid);
 
   void Ping(ebbrt::Messenger::NetworkId nid);
+
+  void SendRequest(ebbrt::Messenger::NetworkId nid, uint64_t id, std::string code);
+
+	void SendReply();
 
   void ReceiveMessage(ebbrt::Messenger::NetworkId nid,
                       std::unique_ptr<ebbrt::IOBuf> &&buf);

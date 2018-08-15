@@ -137,32 +137,22 @@ void openwhisk::kafka::activation_consumer_loop(){
                << endl;
         }
       } else {
-        // Print the key (if any)
-        if (msg.get_key()) {
-          cout << "MSG KEY: " << msg.get_key() << " -> ";
-        }
-        // Print the payload
+        // Get the message payload
         std::string amjson = msg.get_payload();
         kafka_consumer.commit(msg);
         msg::ActivationMessage am(amjson); 
-        cout << "MSG ORIG: " << amjson << endl;
-        cout << "MSG PARS: " << am.to_json() << endl;
-        // Create a response
-        msg::CompletionMessage cm(am);
-        cm.response_.duration_ = 999;
-        cm.response_.start_ = 0;
-        cm.response_.end_ = 0;
-        cm.response_.status_code_ = 0;
-        // Pull data from DB
+        // Pull fuction code from DB
         auto code = couchdb::get_action(am.action_);
-        cout << endl << "```" << endl << code << endl << "```" << endl;
-
-        // Send response
-        MessageBuilder builder("completed0");
-        auto pl = cm.to_json();
-        builder.payload(pl);
-        cout << "Completed response: " << pl << endl;
-        kafka_producer.produce(builder);
+        // Send request to the suess controller to fulfill
+        auto cmf = seuss::controller->ScheduleActivation(am, code);
+        cmf.Then([&kafka_producer](ebbrt::Future<msg::CompletionMessage> cmf) {
+          auto cm = cmf.Get();
+          MessageBuilder builder("completed0");
+          auto pl = cm.to_json();
+          builder.payload(pl);
+          cout << "Completed response: " << pl << endl;
+          kafka_producer.produce(builder);
+        });
       }
     }
   }

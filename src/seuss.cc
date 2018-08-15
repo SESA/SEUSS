@@ -10,17 +10,18 @@
 
 #if __ebbrt__ // native
 
-#include <ebbrt/Debug.h>
 #include <iostream>
 
+#include <ebbrt/Debug.h>
+
+#include "SeussInvoker.h"
 
 void AppMain() {
   ebbrt::kprintf("Entered App Main \n");
   // TODO: Block until the ZKGidMap is online
   ebbrt::event_manager->Spawn([]() {
     ebbrt::dsys::Init();
-    auto rep = new SeussChannel(SeussChannel::global_id);
-    SeussChannel::Create(rep, SeussChannel::global_id);
+    seuss::Init();
   });
 }
 
@@ -30,14 +31,9 @@ void AppMain() {
 #include <iostream>
 #include "openwhisk/openwhisk.h"
 
-using std::string;
-using std::cout;
-using std::endl;
-
 void AppMain() {
   ebbrt::dsys::Init(); // Static Ebb constructor
-  auto rep = new SeussChannel(SeussChannel::global_id);
-  SeussChannel::Create(rep, SeussChannel::global_id);
+  suess::Init();
   openwhisk::connect();
 }
 #endif

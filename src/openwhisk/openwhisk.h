@@ -7,6 +7,10 @@
 #include <boost/program_options.hpp>
 namespace po = boost::program_options;
 
+#include <ebbrt/Future.h>
+
+#include "../SeussController.h"
+
 #include "cppkafka/configuration.h"
 #include "msg.h"
 

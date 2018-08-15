@@ -24,11 +24,13 @@ set(HOSTED_SOURCES
 			src/openwhisk/kafka.cc
 			src/openwhisk/msg.cc
 			src/openwhisk/openwhisk.cc
+      src/SeussController.cc
       src/hosted/main.cc)
 
 # native-only
 set(BAREMETAL_SOURCES
       ${SOURCES}
+      src/SeussInvoker.cc
       )
 
 # ebbrt-zookeeper is required by hosted & native
@@ -36,11 +38,18 @@ find_package(EbbRTZooKeeper REQUIRED)
 
 ## Baremetal  ========================================================
 if( ${CMAKE_SYSTEM_NAME} STREQUAL "EbbRT")
+	
   find_package(EbbRTSocket REQUIRED)
+
+	# TODO(jmcadden): add logic to build and install libumm & target
+
   include_directories(${EBBRT-SOCKET_INCLUDE_DIRS}
     ${EBBRT-ZOOKEEPER_INCLUDE_DIRS})
-  add_executable(seuss.elf ${BAREMETAL_SOURCES})
-  target_link_libraries(seuss.elf ${EBBRT-ZOOKEEPER_LIBRARIES} ${EBBRT-SOCKET_LIBRARIES})
+  add_executable(seuss.elf ${BAREMETAL_SOURCES} )
+  target_link_libraries(seuss.elf ${EBBRT-ZOOKEEPER_LIBRARIES} ${EBBRT-SOCKET_LIBRARIES} )
+  target_link_libraries(seuss.elf ${CMAKE_CURRENT_SOURCE_DIR}/src/umm/build/libumm.a)
+  target_link_libraries(seuss.elf ${CMAKE_CURRENT_SOURCE_DIR}/src/umm/tests/simple_test/target.binelf )
+	target_link_libraries(seuss.elf PUBLIC -T../src/umm/src/umm.lds )
   add_custom_command(TARGET seuss.elf POST_BUILD
     COMMAND objcopy -O elf32-i386 seuss.elf seuss.elf32 )
   set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES seuss.elf32 )

@@ -45,5 +45,7 @@ po::options_description program_options();
 bool process_program_options(po::variables_map &vm);
 void connect();
 
+void test();
+
 } // end namespace openwhisk
 #endif // SEUSS_OPENWHISK_OPENWHISK_H_

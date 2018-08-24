@@ -140,10 +140,11 @@ void openwhisk::kafka::activation_consumer_loop(){
         // Get the message payload
         std::string amjson = msg.get_payload();
         kafka_consumer.commit(msg);
-        msg::ActivationMessage am(amjson); 
+        msg::ActivationMessage am(amjson);
         // Pull fuction code from DB
         auto code = couchdb::get_action(am.action_);
         // Send request to the suess controller to fulfill
+#if 0
         auto cmf = seuss::controller->ScheduleActivation(am, code);
         cmf.Then([&kafka_producer](ebbrt::Future<msg::CompletionMessage> cmf) {
           auto cm = cmf.Get();
@@ -153,6 +154,7 @@ void openwhisk::kafka::activation_consumer_loop(){
           cout << "Completed response: " << pl << endl;
           kafka_producer.produce(builder);
         });
+#endif
       }
     }
   }

@@ -17,7 +17,6 @@
 #include "SeussInvoker.h"
 
 void AppMain() {
-  ebbrt::kprintf("Entered App Main \n");
   // TODO: Block until the ZKGidMap is online
   ebbrt::event_manager->Spawn([]() {
     ebbrt::dsys::Init();
@@ -31,9 +30,12 @@ void AppMain() {
 #include <iostream>
 #include "openwhisk/openwhisk.h"
 
+#include "SeussController.h"
+
 void AppMain() {
   ebbrt::dsys::Init(); // Static Ebb constructor
-  suess::Init();
-  openwhisk::connect();
+  seuss::Init();
+  //openwhisk::connect();
+  openwhisk::test();
 }
 #endif

@@ -8,8 +8,8 @@
 #include <unordered_map>
 
 #include <ebbrt/IOBuf.h>
-#include <ebbrt/Messenger.h>
 #include <ebbrt/Message.h>
+#include <ebbrt/Messenger.h>
 #include <ebbrt/SharedEbb.h>
 #include <ebbrt/UniqueIOBuf.h>
 
@@ -21,13 +21,16 @@ enum SeussMsgType : uint8_t {
   reply,
 };
 
+// TODO: Add function id
 struct SeussMsgHeader {
   SeussMsgType type;
-  uint64_t id;
-  size_t msg_len;
+  uint64_t tid; // transaction id
+  size_t fid; // function id
+  size_t args_len;
+  size_t code_len;
 };
 
-//TODO(jmcadden): make this a multi-node Ebb
+// TODO(jmcadden): make this a multi-node Ebb
 class SeussChannel : public ebbrt::Messagable<SeussChannel>,
                      public ebbrt::SharedEbb<SeussChannel> {
 public:
@@ -37,9 +40,11 @@ public:
 
   void Ping(ebbrt::Messenger::NetworkId nid);
 
-  void SendRequest(ebbrt::Messenger::NetworkId nid, uint64_t id, std::string code);
+  void SendRequest(ebbrt::Messenger::NetworkId nid, uint64_t id, size_t fid,
+                   std::string code, std::string args);
 
-	void SendReply();
+  void SendReply(ebbrt::Messenger::NetworkId nid, uint64_t id, size_t fid,
+                   std::string args);
 
   void ReceiveMessage(ebbrt::Messenger::NetworkId nid,
                       std::unique_ptr<ebbrt::IOBuf> &&buf);

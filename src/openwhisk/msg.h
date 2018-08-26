@@ -65,6 +65,7 @@ public:
   InstanceId rootControllerIndex_;
   std::string activationId_;
   std::string revision_;
+  std::string content_; // input arguments 
   Action action_;
   User user_;
   bool blocking_;
@@ -72,8 +73,8 @@ public:
     return "{\"rootControllerIndex\":" + rootControllerIndex_.to_json() +
            ",\"activationId\":\"" + activationId_ + "\",\"revision\":\"" +
            revision_ + "\",\"transid\":" + transid_.to_json() + ",\"action\":" +
-           action_.to_json() + ",\"blocking\":" + std::to_string(blocking_) +
-           ",\"user\":" + user_.to_json() + "}";
+           action_.to_json() + ",\"content\":" + content_ + ",\"blocking\":" +
+           std::to_string(blocking_) + ",\"user\":" + user_.to_json() + "}";
   };
 };
 
@@ -92,14 +93,16 @@ public:
   long long start_;
   long long end_;
   long long status_code_;
+  std::string result_;
   std::string to_json() const {
     return "{\"duration\":" + std::to_string(duration_) + ",\"name\":\"" +
            name_ + "\"" + ",\"subject\":\"" + subject_ + "\"" +
            ",\"activationId\":\"" + activationId_ + "\"" + ",\"publish\":" +
-           publish_ + ",\"version\":\"" + version_ + "\"" +
-           ",\"end\":" + std::to_string(end_) + ",\"start\":" +
-           std::to_string(start_) + ",\"namespace\":\"" + namespace_ + "\"" + ",\"response\":{\"statusCode\":" +std::to_string(status_code_) +
-           "},\"logs\":[],\"annotations\":[]}";
+           publish_ + ",\"version\":\"" + version_ + "\"" + ",\"end\":" +
+           std::to_string(end_) + ",\"start\":" + std::to_string(start_) +
+           ",\"namespace\":\"" + namespace_ + "\"" +
+           ",\"response\":{\"statusCode\":" + std::to_string(status_code_) +
+           ",\"result\":" + result_ + "},\"logs\":[],\"annotations\":[]}";
   };
 };
 

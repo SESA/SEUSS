@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <yajl/yajl_tree.h>
 
+#include <sstream> /* std::ostringstream */
+
 #include "msg.h"
 
 using namespace std;
@@ -21,6 +23,7 @@ openwhisk::msg::CompletionMessage::CompletionMessage( openwhisk::msg::Activation
 
 openwhisk::msg::ActivationMessage::ActivationMessage( string json ){
   const char *a_path[] = {"activationId", (const char *)0};
+  const char *c_path[] = {"content", (const char *)0};
   const char *r_path[] = {"revision", (const char *)0};
   const char *t_path[] = {"transid", (const char *)0};
   const char *ac_path_1[] = {"action", "path", (const char *)0};
@@ -34,6 +37,11 @@ openwhisk::msg::ActivationMessage::ActivationMessage( string json ){
   char errbuf[1024];
   yajl_val yv;
 
+  /** Generator for content string */
+#if 0
+  yajl_gen g;
+  g = yajl_gen_alloc(NULL);
+#endif
   /** parse json, errors to stderr */
   auto yajl_node =
       yajl_tree_parse(json.c_str(), errbuf, json.size());
@@ -45,7 +53,26 @@ openwhisk::msg::ActivationMessage::ActivationMessage( string json ){
   yv = yajl_tree_get(yajl_node, a_path, yajl_t_string);
   if (yv)
     activationId_ = YAJL_GET_STRING(yv);
-	// revision
+
+  // content (input arguments)
+  yv = yajl_tree_get(yajl_node, c_path, yajl_t_object);
+  if (YAJL_IS_OBJECT(yv)) {
+    auto c_obj = YAJL_GET_OBJECT(yv);
+    std::ostringstream ss;
+    ss << "{"; 
+    for (uint16_t i = 0; i < c_obj->len; i++) {
+      if (i > 0)
+        ss << ",";
+      ss << "\"" << c_obj->keys[i] << "\":\""
+         << YAJL_GET_STRING(c_obj->values[i]) << "\"";
+    }
+    ss << "}";
+    content_ = ss.str();
+  } else {
+    content_ = "{}";
+  }
+
+  // revision
   yv = yajl_tree_get(yajl_node, r_path, yajl_t_string);
   if (yv)
     revision_ = YAJL_GET_STRING(yv);

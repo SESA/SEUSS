@@ -101,6 +101,8 @@ void seuss::Controller::ResolveActivation(uint64_t tid, std::string res){
     auto record = std::move(it->second);
     openwhisk::msg::CompletionMessage cm(record.second);
     // TODO: Fill in the results 
+    cm.response_.status_code_ = 0; // alwasy success
+    cm.response_.result_ = res;
     record.first.SetValue(cm);
     record_map_.erase(it);
 }

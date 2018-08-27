@@ -93,7 +93,7 @@ public:
   long long start_;
   long long end_;
   long long status_code_;
-  std::string result_;
+  std::string result_ = "{}";
   std::string to_json() const {
     return "{\"duration\":" + std::to_string(duration_) + ",\"name\":\"" +
            name_ + "\"" + ",\"subject\":\"" + subject_ + "\"" +

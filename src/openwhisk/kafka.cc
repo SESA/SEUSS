@@ -4,8 +4,8 @@
 #include <thread>
 #include <vector>
 
-#include "../SeussChannel.h"
 #include <ebbrt/Cpu.h>
+#include "../SeussController.h"
 
 #include "openwhisk.h"
 
@@ -43,18 +43,20 @@ namespace {
 string kafka_broker;
 uint64_t invoker_id = 0;
 Configuration config;
-} // end local 
+} // end local
 
 void openwhisk::kafka::ping_producer_loop() {
-  if (kafka_broker.empty() ) {
-    std::cerr << "kafka error - No broker, cannot start ping loop." << std::endl;
+  if (kafka_broker.empty()) {
+    std::cerr << "kafka error - No broker, cannot start ping loop."
+              << std::endl;
     return;
   }
 
   Producer kafka_producer(config);
   msg::PingMessage ping;
   ping.name_.instance_ = invoker_id;
-  cout << "kafka: Sending heartbeat to OpenWhisk at a rate of 1 every " << ping_freq_ms << "ms." << endl;
+  cout << "kafka: Sending heartbeat to OpenWhisk at a rate of 1 every "
+       << ping_freq_ms << "ms." << endl;
   cout << "Ping msg: " << ping.to_json() << endl;
 
   // Optional: dump kafka state
@@ -99,31 +101,32 @@ void openwhisk::kafka::ping_producer_loop() {
   while (1) {
     std::this_thread::sleep_for(std::chrono::milliseconds(ping_freq_ms));
     // Create a heartbeat message
-  try {
-    MessageBuilder builder("health");
-    auto pl = ping.to_json();
-    builder.payload(pl);
-    kafka_producer.produce(builder);
-  } catch (const Exception &ex) {
-    cout << "Error fetching group information: " << ex.what() << endl;
-  }
+    try {
+      MessageBuilder builder("health");
+      auto pl = ping.to_json();
+      builder.payload(pl);
+      kafka_producer.produce(builder);
+    } catch (const Exception &ex) {
+      cout << "Error fetching group information: " << ex.what() << endl;
+    }
   }
 }
 
-void openwhisk::kafka::activation_consumer_loop(){
-  if (kafka_broker.empty() ) {
-    std::cerr << "kafka error - No broker, cannot start consumer loop." << std::endl;
+void openwhisk::kafka::activation_consumer_loop() {
+  if (kafka_broker.empty()) {
+    std::cerr << "kafka error - No broker, cannot start consumer loop."
+              << std::endl;
     return;
   }
 
   // Create the invoker topic and consumer
   Consumer kafka_consumer(config);
   Producer kafka_producer(config);
-  std::string default_topic = "invoker"+std::to_string(invoker_id);
+  std::string default_topic = "invoker" + std::to_string(invoker_id);
   cout << "kafka: consumer subscribe to:" << default_topic << endl;
-  kafka_consumer.subscribe({ default_topic });
+  kafka_consumer.subscribe({default_topic});
 
-  // Stream in Activation messages 
+  // Stream in Activation messages
   while (1) {
     // Try to consume a message
     Message msg = kafka_consumer.poll(); // XXX: I assume this blocks..?
@@ -141,30 +144,44 @@ void openwhisk::kafka::activation_consumer_loop(){
         std::string amjson = msg.get_payload();
         kafka_consumer.commit(msg);
         msg::ActivationMessage am(amjson);
-        // Pull fuction code from DB
-        auto code = couchdb::get_action(am.action_);
-        // Send request to the suess controller to fulfill
-#if 0
-        auto cmf = seuss::controller->ScheduleActivation(am, code);
-        cmf.Then([&kafka_producer](ebbrt::Future<msg::CompletionMessage> cmf) {
-          auto cm = cmf.Get();
+
+        /* For invokerHealthTestActions we immediatly return successful result*/
+        if (am.action_.name_ == "invokerHealthTestAction0") {
+          // Create an empty response
+          msg::CompletionMessage cm(am);
+          cm.response_.duration_ = 0;
+          cm.response_.start_ = 0;
+          cm.response_.end_ = 0;
+          cm.response_.status_code_ = 0; // success
           MessageBuilder builder("completed0");
           auto pl = cm.to_json();
           builder.payload(pl);
           cout << "Completed response: " << pl << endl;
           kafka_producer.produce(builder);
-        });
-#endif
-      }
-    }
-  }
-}
+        } else {
 
+          // Send request to the suess controller to fulfill
+          // XXX: Do this asyncronously?
+          auto cmf = seuss::controller->ScheduleActivation(am);
+          cmf.Then(
+              [&kafka_producer](ebbrt::Future<msg::CompletionMessage> cmf) {
+                auto cm = cmf.Get();
+                MessageBuilder builder("completed0");
+                auto pl = cm.to_json();
+                builder.payload(pl);
+                cout << "Completed response: " << pl << endl;
+                kafka_producer.produce(builder);
+              });
+        }
+      } // end if(msg.get_error())
+    }   // end if(msg)
+  }     // end while(1)
+}
 
 po::options_description openwhisk::kafka::program_options() {
   po::options_description options("Kafka");
-  options.add_options()("kafka-brokers,k", po::value<string>(),"kafka host")
-                       ("kafka-topic,t", po::value<uint64_t>(), "invoker Id");
+  options.add_options()("kafka-brokers,k", po::value<string>(), "kafka host")(
+      "kafka-topic,t", po::value<uint64_t>(), "invoker Id");
   return options;
 }
 
@@ -176,17 +193,16 @@ bool openwhisk::kafka::init(po::variables_map &vm) {
 
   std::cout << "kafka: hosts " << kafka_broker << std::endl;
   std::cout << "kafka: invoker #" << std::to_string(invoker_id) << std::endl;
-  if (kafka_broker.empty() ) {
+  if (kafka_broker.empty()) {
     std::cerr << "kafka: Error - incomplete configuration " << std::endl;
     return false;
   }
 
-  config = {{"metadata.broker.list", kafka_broker},
-                          {"group.id", invoker_id}};
+  config = {{"metadata.broker.list", kafka_broker}, {"group.id", invoker_id}};
 
   /** New producer and topic confiuguration */
   Producer kafka_producer(config);
-  std::string default_topic = "invoker"+std::to_string(invoker_id);
+  std::string default_topic = "invoker" + std::to_string(invoker_id);
   cout << "kafka: create new topic: " << default_topic << endl;
   kafka_producer.get_topic(default_topic);
 

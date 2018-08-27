@@ -44,21 +44,26 @@ ebbrt::Future<openwhisk::msg::CompletionMessage>
 seuss::Controller::ScheduleActivation(
     const openwhisk::msg::ActivationMessage &am) {
 
+#if 0
   /* XXX: WE HARD-CODE THE FUNCTION AND ARGUMENTS, INGNORING THE INPUT */
   const std::string code =
       R"({"value": {"main":"main", "code":" function main(args) { return {done:true, arg:args.mykey}; }"}})";
   const std::string args = R"({"value": {"mykey":"my-secret-val"}})";
+#endif
+
+  auto code = openwhisk::couchdb::get_action(am.action_);
+  auto args = am.content_;
+  uint64_t tid = am.transid_.id_; // OpenWhisk transaction id (unique)
+  auto fid = std::hash<std::string>{}(am.revision_);
 
   std::cout << "CONTROLLER: scedualing activation on core #"
             << (size_t)ebbrt::Cpu::GetMine() << ": " << am.to_json()
             << std::endl
-            << "```" << std::endl
+            << "``` CODE:" << std::endl
             << code << std::endl
+            << "``` ARGS:" << std::endl
+            << args << std::endl
             << "```" << std::endl;
-
-  uint64_t tid = am.transid_.id_; // OpenWhisk transaction id (unique)
-  auto fid = std::hash<std::string>{}(am.revision_);
-
 
   /* Capture a record of this Actication */
   ebbrt::Promise<openwhisk::msg::CompletionMessage> promise;

@@ -13,49 +13,58 @@
 using namespace std;
 
 namespace {
-string db_host;
-string db_password;
-string db_port;
-string db_protocol;
-string db_provider;
-string db_username;
-string db_address;
+string couchdb_host;
+string couchdb_password;
+string couchdb_port;
+string couchdb_protocol;
+string couchdb_provider;
+string couchdb_username;
+string couchdb_address;
+string couchdb_db_auth;
+string couchdb_db_entity;
+string couchdb_db_activation;
 } // end local namespace
 
 po::options_description openwhisk::couchdb::program_options() {
   po::options_description options("CouchDB");
-  options.add_options()("db_host", po::value<string>(&db_host), "CouchDB host");
-  options.add_options()("db_password", po::value<string>(&db_password),
+  options.add_options()("couchdb_host", po::value<string>(&couchdb_host), "CouchDB host");
+  options.add_options()("couchdb_password", po::value<string>(&couchdb_password),
                         "CouchDB password");
-  options.add_options()("db_port", po::value<string>(&db_port), "CouchDB port");
-  options.add_options()("db_protocol", po::value<string>(&db_protocol),
+  options.add_options()("couchdb_port", po::value<string>(&couchdb_port), "CouchDB port");
+  options.add_options()("couchdb_protocol", po::value<string>(&couchdb_protocol),
                         "CouchDB protocol");
-  options.add_options()("db_provider", po::value<string>(&db_provider),
+  options.add_options()("couchdb_provider", po::value<string>(&couchdb_provider),
                         "CouchDB provider");
-  options.add_options()("db_username", po::value<string>(&db_username),
+  options.add_options()("couchdb_username", po::value<string>(&couchdb_username),
                         "CouchDB username");
+  options.add_options()("couchdb_db_auth", po::value<string>(&couchdb_db_auth),
+                        "CouchDB Whisk Auth DB");
+  options.add_options()("couchdb_db_entity", po::value<string>(&couchdb_db_entity),
+                        "CouchDB Whisk Entity DB");
+  options.add_options()("couchdb_db_activation", po::value<string>(&couchdb_db_activation),
+                        "CouchDB Whisk Activation DB");
   return options;
 }
 
 bool openwhisk::couchdb::init(po::variables_map &vm) {
   std::cout << "Database Config:" << std::endl;
-  if (vm.count("db_host"))
-    std::cout << "db_host: " << db_host << std::endl;
-  if (vm.count("db_username"))
-    std::cout << "db-username: " << db_username << std::endl;
-  if (vm.count("db_password"))
-    std::cout << "db-password: " << db_password << std::endl;
-  if (vm.count("db_port"))
-    std::cout << "db-port: " << db_port << std::endl;
-  if (vm.count("db_protocol"))
-    std::cout << "db-protocol: " << db_protocol << std::endl;
-  if (vm.count("db_provider"))
-    std::cout << "db-provider: " << db_provider << std::endl;
+  if (vm.count("couchdb_host"))
+    std::cout << "couchdb_host: " << couchdb_host << std::endl;
+  if (vm.count("couchdb_username"))
+    std::cout << "db-username: " << couchdb_username << std::endl;
+  if (vm.count("couchdb_password"))
+    std::cout << "db-password: " << couchdb_password << std::endl;
+  if (vm.count("couchdb_port"))
+    std::cout << "db-port: " << couchdb_port << std::endl;
+  if (vm.count("couchdb_protocol"))
+    std::cout << "db-protocol: " << couchdb_protocol << std::endl;
+  if (vm.count("couchdb_provider"))
+    std::cout << "db-provider: " << couchdb_provider << std::endl;
   
-  if( db_protocol.empty() || db_host.empty() || db_username.empty() || db_password.empty() || db_port.empty())
+  if( couchdb_protocol.empty() || couchdb_host.empty() || couchdb_username.empty() || couchdb_password.empty() || couchdb_port.empty())
     return false;
 
-  db_address = db_protocol+"://"+db_username+":"+db_password+"@"+db_host+":"+db_port;
+  couchdb_address = couchdb_protocol+"://"+couchdb_username+":"+couchdb_password+"@"+couchdb_host+":"+couchdb_port;
 	return true;
 }
 
@@ -63,7 +72,7 @@ std::string openwhisk::couchdb::get_action( openwhisk::msg::Action action ){
   std::string function_code = "";
   pt_response_t* response = NULL;
   pt_init();
-  std::string get_addr = db_address+"/whisk_kumowhisks/"+action.path_+"%2F"+action.name_;
+  std::string get_addr = couchdb_address+"/"+couchdb_db_entity+"/"+action.path_+"%2F"+action.name_;
   cout << "DB request addr: " << get_addr << endl;
   response = pt_unparsed_get(get_addr.c_str());
 

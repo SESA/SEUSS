@@ -8,7 +8,7 @@
 #include "SeussChannel.h"
 #include "dsys/dsys.h"
 
-#if __ebbrt__ // native
+#if __ebbrt__ // ###### NATIVE ######
 
 #include <iostream>
 
@@ -24,7 +24,7 @@ void AppMain() {
   });
 }
 
-#else // hosted (linux)
+#else // ###### HOSTED (linux) ######
 
 #include <assert.h>
 #include <iostream>
@@ -35,7 +35,7 @@ void AppMain() {
 void AppMain() {
   ebbrt::dsys::Init(); // Static Ebb constructor
   seuss::Init();
-  //openwhisk::connect();
-  openwhisk::test();
+  openwhisk::connect();
+  //openwhisk::test();
 }
 #endif

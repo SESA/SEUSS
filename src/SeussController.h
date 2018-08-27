@@ -19,7 +19,7 @@
 
 #include "dsys/dsys.h"
 
-#include "openwhisk/msg.h"
+#include "openwhisk/openwhisk.h"
 
 namespace seuss {
 

@@ -9,6 +9,8 @@
 #include <ebbrt/Cpu.h>
 #include <ebbrt/EventManager.h>
 
+#include "../SeussController.h" // for test()
+
 po::options_description openwhisk::program_options() {
   po::options_description options("OpenWhisk");
   options.add(kafka::program_options());

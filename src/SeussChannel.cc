@@ -98,7 +98,7 @@ void SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
       ebbrt::event_manager->SpawnRemote(
           [msg_header, args, code]() { seuss::invoker->Invoke(msg_header.tid, msg_header.fid, args, code); }, 0);
 #else
-      kabort("Received invocation requestion on Linux !?\n");
+      kabort("Received invocation request on Linux !?\n");
 #endif
       break;
     case SeussMsgType::reply:
@@ -108,7 +108,7 @@ void SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
                     msg_header.args_len);
       }
 #ifdef __ebbrt__
-      kabort("Received invocation requestion on Linux !?\n");
+      kabort("Received invocation reply on Linux !?\n");
 #else
       seuss::controller->ResolveActivation(msg_header.tid, args);
 #endif

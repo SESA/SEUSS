@@ -42,21 +42,22 @@ void seuss::Controller::RegisterNode(ebbrt::Messenger::NetworkId nid) {
 
 ebbrt::Future<openwhisk::msg::CompletionMessage>
 seuss::Controller::ScheduleActivation(
-    const openwhisk::msg::ActivationMessage &am) {
+    const openwhisk::msg::ActivationMessage &am, std::string code ) {
 
 #if 0
-  /* XXX: WE HARD-CODE THE FUNCTION AND ARGUMENTS, INGNORING THE INPUT */
-  const std::string code =
-      R"({"value": {"main":"main", "code":" function main(args) { return {done:true, arg:args.mykey}; }"}})";
+  /* XXX: WE HARD-CODE THE FUNCTION AND ARGUMENTS, IGNORING THE INPUT */
   const std::string args = R"({"value": {"mykey":"my-secret-val"}})";
 #endif
+  if(code.empty())
+    code = openwhisk::couchdb::get_action(am.action_);
 
-  auto code = openwhisk::couchdb::get_action(am.action_);
+  // TODO: cache the code locally
+
   auto args = am.content_;
   uint64_t tid = am.transid_.id_; // OpenWhisk transaction id (unique)
   auto fid = std::hash<std::string>{}(am.revision_);
 
-  std::cout << "CONTROLLER: scedualing activation on core #"
+  std::cout << "CONTROLLER: scheduling activation on core #"
             << (size_t)ebbrt::Cpu::GetMine() << ": " << am.to_json()
             << std::endl
             << "``` CODE:" << std::endl
@@ -65,7 +66,7 @@ seuss::Controller::ScheduleActivation(
             << args << std::endl
             << "```" << std::endl;
 
-  /* Capture a record of this Actication */
+  /* Capture a record of this Activation */
   ebbrt::Promise<openwhisk::msg::CompletionMessage> promise;
   auto ret = promise.GetFuture();
   auto record = std::make_pair(std::move(promise), am);
@@ -78,7 +79,7 @@ seuss::Controller::ScheduleActivation(
     assert(inserted);
   }
 
-  /* Scedule this activation on a backend node */
+  /* Schedule this activation on a back-end node */
   kassert(!_nids.empty()); // verify we have a backend node
   // XXX: Safety checks, what is the state of the backed?
   // XXX: Always grab the first node from the list (SINGLE BACKEND)
@@ -98,14 +99,17 @@ seuss::Controller::ScheduleActivation(
 }
 
 void seuss::Controller::ResolveActivation(uint64_t tid, std::string res){
-
     // Lookup record in the hash table 
     std::lock_guard<std::mutex> guard(m_);
     auto it = record_map_.find(tid);
     assert(it != record_map_.end());
     auto record = std::move(it->second);
     openwhisk::msg::CompletionMessage cm(record.second);
-    // TODO: Fill in the results 
+    // TODO: Fill in the results
+    // TODO: set run times 
+    cm.response_.duration_ = 0;
+    cm.response_.start_ = 0;
+    cm.response_.end_ = 0;
     cm.response_.status_code_ = 0; // alwasy success
     cm.response_.result_ = res;
     record.first.SetValue(cm);

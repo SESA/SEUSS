@@ -33,7 +33,8 @@ public:
   Controller(ebbrt::EbbId ebbid);
 
   ebbrt::Future<openwhisk::msg::CompletionMessage>
-  ScheduleActivation(const openwhisk::msg::ActivationMessage &am);
+  ScheduleActivation(const openwhisk::msg::ActivationMessage &am,
+                     std::string code = std::string());
   void  ResolveActivation(uint64_t tid, std::string res);
 
   // Node allocation functions

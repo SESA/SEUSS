@@ -21,7 +21,6 @@ enum SeussMsgType : uint8_t {
   reply,
 };
 
-// TODO: Add function id
 struct SeussMsgHeader {
   SeussMsgType type;
   uint64_t tid; // transaction id

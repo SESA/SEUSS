@@ -145,7 +145,7 @@ void openwhisk::kafka::activation_consumer_loop() {
         kafka_consumer.commit(msg);
         msg::ActivationMessage am(amjson);
 
-        /* For invokerHealthTestActions we immediatly return successful result*/
+        /* For invokerHealthTestActions we immediately return successful result*/
         if (am.action_.name_ == "invokerHealthTestAction0") {
           // Create an empty response
           msg::CompletionMessage cm(am);
@@ -160,8 +160,8 @@ void openwhisk::kafka::activation_consumer_loop() {
           kafka_producer.produce(builder);
         } else {
 
-          // Send request to the suess controller to fulfill
-          // XXX: Do this asyncronously?
+          // Send request to the seuss controller to fulfill
+          // XXX: Do this asynchronously?
           auto cmf = seuss::controller->ScheduleActivation(am);
           cmf.Then(
               [&kafka_producer](ebbrt::Future<msg::CompletionMessage> cmf) {

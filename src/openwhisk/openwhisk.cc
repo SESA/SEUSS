@@ -47,9 +47,11 @@ void openwhisk::test() {
   ebbrt::event_manager->Spawn(
       [am]() {
         std::string args;
+        const std::string code =
+            R"(function main(args) { return {done:true, arg:args.mykey}; })";
         /* FOR EACH STDIN, INVOKE THE FUNCTION */
         while (std::cin >> args) {
-          auto cmf = seuss::controller->ScheduleActivation(am);
+          auto cmf = seuss::controller->ScheduleActivation(am, code);
           cmf.Then([](auto f) {
             auto cm = f.Get();
             std::cout << "Test received a response: " << cm.to_json()

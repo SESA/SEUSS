@@ -29,23 +29,24 @@ public:
         run_args_(args), run_id_(tid) {
     once_connected = set_connected_.GetFuture();
   }
+  /* TCP connection aborted */ 
   void Abort();
+  /* TCP connection closed */ 
   void Close();
+  /* TCP connection established */ 
   void Connected();
-  void Init(std::string code);
-  void Run(uint64_t tid, std::string args);
+  /* Send HTTP request */ 
+  void SendHttpRequest(std::string path, std::string payload);
+  /* TCP connection receive data */ 
   void Receive(std::unique_ptr<ebbrt::MutIOBuf> b);
-  bool isConnected() { return is_connected_; };
-  bool isInitialized() { return is_initialized_; };
   ebbrt::Future<void> once_connected;
 
 private:
-  std::string http_request(std::string path, std::string body);
+  std::string http_post_request(std::string path, std::string payload);
   std::string function_code_;
   ebbrt::Promise<void> set_connected_;
   bool is_connected_{false};
   bool is_initialized_{false};
-  size_t runs_{0};
   // RUN specific state
   std::string run_args_;
   uint64_t run_id_{0};
@@ -53,7 +54,7 @@ private:
 
 /*  suess::Invoker 
  *  Per-core ebb responsible for initializing the
- *  UM instances, executing the function code, and, eventually, caching and
+ *  UM instances, executing the function code and, eventually, caching and
  *  redeploying instance snapshots.
  */
 class Invoker : public ebbrt::MulticoreEbb<Invoker> {
@@ -62,8 +63,6 @@ public:
   Invoker(){};
   /* Bootstrap the instance on this core */
   void Bootstrap();
-  /* Boot UM instance on this core */
-  void Begin(){};
   /* Invoke code on an uninitialized instance */
   void Invoke(uint64_t tid, size_t fid, const std::string args,
               const std::string code);
@@ -81,7 +80,7 @@ private:
   // TODO: FIXME: XXX: locking...
   std::mutex m_;
   std::unordered_map<uint32_t, ebbrt::Promise<void>> promise_map_;
-  // TODO: move sv into a root Ebb
+  // TODO: move sv into a root Ebb?
   umm::UmSV base_um_env_;
 };
 

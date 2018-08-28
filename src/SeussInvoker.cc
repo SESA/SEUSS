@@ -3,6 +3,8 @@
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
 
+#include <algorithm> /* std::remove */
+#include <string>
 #include <sstream> /* std::ostringstream */
 
 #include <ebbrt/Debug.h>
@@ -25,12 +27,10 @@ void seuss::Init(){
   SeussChannel::Create(rep, SeussChannel::global_id);
   umm::UmManager::Init();
   Invoker::Create(Invoker::global_id);
-  // XXX: We only bootstrap invoker on the Init core (core 0)
-  seuss::invoker->Bootstrap();
 
   // TODO: Bootstrap the invoker on each core 
-  //  Or...
-  // TODO: Bootstrap once share snap_sv in root ebb
+  // XXX: We only bootstrap invoker on the Init core (core 0)
+  seuss::invoker->Bootstrap();
 #if 0
   // Begin seuss invoker on each core
   //size_t my_cpu = ebbrt::Cpu::GetMine();
@@ -46,62 +46,28 @@ void seuss::Init(){
 #endif 
 }
 
-/* suess::InvocationSession */
+/* class seuss::InvocationSession */
 
 void seuss::InvocationSession::Connected() {
     // We've established a connection with the instance
     set_connected_.SetValue();
     is_connected_ = true;
-    // Send code to be initialized if we have some
+    // Send code to be initialized 
     if (!function_code_.empty())
-      Init(function_code_);
+      SendHttpRequest("/init", function_code_);
 }
-
-void seuss::InvocationSession::Init(std::string code) {
-  kassert(!is_initialized_);
-  kassert(code.size() > 0);
-  // FIXME: Wrap code message in {"value" : {MSG}}
-  std::string msg = http_request("/init", code);
-
-  kprintf_force("SENDING INIT MSG (%d): %s\n", msg.size(), msg.c_str());
-
-  auto buf = ebbrt::MakeUniqueIOBuf(msg.size());
-  auto dp = buf->GetMutDataPointer();
-  auto str_ptr = reinterpret_cast<char *>(dp.Data());
-  msg.copy(str_ptr, msg.size());
-  Send(std::move(buf));
-}
-
-void seuss::InvocationSession::Run(uint64_t tid, std::string args) {
-  kassert(args.size() > 0);
-  // FIXME: Wrap arg message in {"value" : {MSG}}
-  std::string msg = http_request("/run", args);
-
-  kprintf("***********\n");
-  kprintf_force("RUN REQ (%d):%s\n", tid, msg.c_str());
-  kprintf("***********\n");
-
-  runs_++;
-  auto buf = ebbrt::MakeUniqueIOBuf(msg.size());
-  auto dp = buf->GetMutDataPointer();
-  auto str_ptr = reinterpret_cast<char *>(dp.Data());
-  msg.copy(str_ptr, msg.size());
-  Send(std::move(buf));
-
-  auto buf2 = ebbrt::MakeUniqueIOBuf(0);
-  Send(std::move(buf2));
-}
-
 
 void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
 
   kprintf_force("InvocationSession received response : len=%d\n links=%d",
                        b->ComputeChainDataLength(), b->CountChainElements());
+
   //TODO: support chain and incomplete buffers (i.e., large replies)
   kassert(!b->IsChained());
 
   std::string reply(reinterpret_cast<const char *>(b->Data()), b->Length());
-  std::string proto_header = reply.substr(0,reply.find_first_of("\r"));
+  std::string proto_header = reply.substr(0, reply.find_first_of("\r"));
+
   // TODO: handle failure case
   kassert(proto_header == "HTTP/1.1 200 OK");
 
@@ -112,10 +78,9 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
   // An "OK":true response signals a finished INIT 
   if(is_initialized_ == false && response == R"({"OK":true})"){
     is_initialized_ = true;
-    // XXX: Should we always RUN after INIT ?
+    // always RUN right after INIT is complete
     if(!run_args_.empty())
-      // If we have arguments to run, do that now
-      Run(run_id_, run_args_);
+      SendHttpRequest("/run", run_args_);
   } else {
     // finished RUN, send results back to the invoker to resolve 
     seuss::invoker->Resolve(run_id_, response);
@@ -130,21 +95,43 @@ void seuss::InvocationSession::Abort() {
   kprintf_force("InvocationSession aborted!\n");
 }
 
-std::string seuss::InvocationSession::http_request(std::string path,
-                                                  std::string body) {
-  std::ostringstream ss;
-  ss << "POST " << path << " HTTP/1.0\r\n"
-     << "Content-Type: application/json\r\n"
-     << "Connection: keep-alive\r\n"
-     << "content-length: " << body.size() << "\r\n\r\n"
-     << body;
-  return ss.str();
+void seuss::InvocationSession::SendHttpRequest(std::string path, std::string payload) {
+  kassert(payload.size() > 0);
+  std::string msg = http_post_request(path, payload);
+  auto buf = ebbrt::MakeUniqueIOBuf(msg.size());
+  auto dp = buf->GetMutDataPointer();
+  auto str_ptr = reinterpret_cast<char *>(dp.Data());
+  msg.copy(str_ptr, msg.size());
+  Send(std::move(buf));
 }
 
-/* suess::Invoker */
+std::string seuss::InvocationSession::http_post_request(std::string path,
+                                                   std::string msg) {
+  std::ostringstream payload;
+  std::ostringstream ret;
+  // strip newlines from msg
+  msg.erase(std::remove(msg.begin(), msg.end(), '\n'), msg.end());
+  payload << "{\"value\": ";
+  if (path == "/init") {
+    payload << "{\"main\":\"main\", \"code\":\"" << msg << "\"}}";
+  } else {
+    payload << msg << "}";
+  }
+  auto body = payload.str();
+  ret << "POST " << path << " HTTP/1.0\r\n"
+      << "Content-Type: application/json\r\n"
+      << "Connection: keep-alive\r\n"
+      << "content-length: " << body.size() << "\r\n\r\n"
+      << body;
+  return ret.str();
+}
+
+/* class suess::Invoker */
 
 void seuss::Invoker::Bootstrap() {
   kprintf_force("Bootstrap invocation instance on core #%d\n", (size_t)ebbrt::Cpu::GetMine());
+
+  // TODO: assert this hasent run yet
 
   // Generated UM Instance from the linked-in elf
   auto sv = umm::ElfLoader::createSVFromElf(&_sv_start);
@@ -174,8 +161,9 @@ void seuss::Invoker::Bootstrap() {
   return;
 }
 
-void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args, const std::string code) {
-  kassert(is_bootstrapped_); 
+void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
+                            const std::string code) {
+  kassert(is_bootstrapped_);
 
   // XXX: Clean up ordering semantics here
 
@@ -185,33 +173,24 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args, co
         3. WAIT until current function finishes (could be a "faulty" request)
      BUT For now, we'll just abort...
   */
-  // XXX: Deal with concurrent calls to Invoke
 
-  if (is_running_) {
-    kassert(umsesh_);
-    kassert(umsesh_->isConnected());
-    // XXX: Only support a single function (for now...)
-    if (fid != fid_) {
-      ebbrt::kabort(
-          "Error: a different function is already initialized on this core\n");
-    }
-    // Since we don't have to initialize the code, we can just pass the args &
-    // RUN
-    umsesh_->Run(tid, args);
-    return;
-  }
+  // XXX: Deal with concurrent calls to invoke!
+  kassert(!is_running_);
 
   // We assume the core does NOT have a running UM instance
   // i.e., umm::manager->Status() == empty
+
   kassert(!umsesh_);
 
   // Create a new session for invoking this function
   fid_ = fid;
   ebbrt::NetworkManager::TcpPcb pcb;
+
   // TODO: Remove arguments from Session constructor and set them via Method call
   // TODO: Or do it all via promise/futures
   umsesh_ = new InvocationSession(std::move(pcb), args, code, tid);
   umsesh_->Install();
+
   // Load up the base environment
   auto umi2 = std::make_unique<umm::UmInstance>(base_um_env_);
   umm::manager->Load(std::move(umi2));
@@ -229,14 +208,19 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args, co
   /* Boot the snapshot */
   is_running_ = true;
   umm::manager->runSV(); // blocks until umm::manager->Halt() is called 
-
   /* After instance is halted */
   is_running_ = false;
+  std::cout << "Unloading core #" << (size_t)ebbrt::Cpu::GetMine() << std::endl;
   umm::manager->Unload();
 }
 
 void seuss::Invoker::Resolve(uint64_t tid, std::string ret) {
   std::cout << "Finished RUN #" << tid << " with result: " << ret << std::endl;
   seuss_channel->SendReply(ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), tid, fid_, ret);
+  // XXX: No need to clean up the TCP connection, its about to die anyway
+  delete umsesh_;
+  umsesh_ = nullptr;
+  umm::manager->Halt();
+  
 }
 

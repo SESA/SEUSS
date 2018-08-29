@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iostream>
 #include <thread>
+#include <cstdlib>
 
 #include "openwhisk.h"
 #include <ebbrt/Cpu.h>
@@ -46,17 +47,26 @@ void openwhisk::test() {
 
   ebbrt::event_manager->Spawn(
       [am]() {
-        std::string args;
+        uint16_t args;
         const std::string code =
             R"(function main(args) { return {done:true, arg:args.mykey}; })";
-        /* FOR EACH STDIN, INVOKE THE FUNCTION */
+        /* FOR EACH STDIN, INVOKE THE FUNCTION N MANY TIMES */
         while (std::cin >> args) {
-          auto cmf = seuss::controller->ScheduleActivation(am, code);
-          cmf.Then([](auto f) {
-            auto cm = f.Get();
-            std::cout << "Test received a response: " << cm.to_json()
-                      << std::endl;
-          });
+          if(!args)
+             continue;
+          std::cout << "Invoking test function " << args << " time(s)..." << std::endl;
+          for(uint16_t i=0; i<args; i++){
+            std::cout << "INV #" << (i+1) << " of " << args << std::endl;
+            auto am_tmp = am;
+            am_tmp.transid_.id_ = rand(); // OpenWhisk transaction id (unique)
+            auto cmf = seuss::controller->ScheduleActivation(am_tmp, code);
+            cmf.Then([i](auto f) {
+              auto cm = f.Get();
+              std::cout << "INV #" << (i+1) << " returned successfully. " //<< cm.to_json()
+                        << std::endl;
+            });
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
       },
       action_cpu->get_context(), true);

@@ -28,13 +28,9 @@ void seuss::Init(){
   umm::UmManager::Init();
   Invoker::Create(Invoker::global_id);
 
-  // TODO: Bootstrap the invoker on each core 
-  // XXX: We only bootstrap invoker on the Init core (core 0)
-  seuss::invoker->Bootstrap();
-#if 0
-  // Begin seuss invoker on each core
-  //size_t my_cpu = ebbrt::Cpu::GetMine();
-  //size_t num_cpus = ebbrt::Cpu::Count();
+  // Begin seuss invoker on each core (starting with this core)
+  size_t my_cpu = ebbrt::Cpu::GetMine();
+  size_t num_cpus = ebbrt::Cpu::Count();
   for (auto i = my_cpu; i < num_cpus; i++) {
     ebbrt::event_manager->SpawnRemote(
         [i]() {
@@ -43,7 +39,6 @@ void seuss::Init(){
         },
         i);
   }
-#endif 
 }
 
 /* class seuss::InvocationSession */
@@ -174,8 +169,19 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
      BUT For now, we'll just abort...
   */
 
-  // XXX: Deal with concurrent calls to invoke!
-  kassert(!is_running_);
+  // Queue up any concurrent calls to Invoke on this core!
+  if (is_running_) {
+    // Core is busy, queue up this invocation request
+    auto record = std::make_pair(args, code);
+    bool inserted;
+    // insert records into the hash tables
+    std::tie(std::ignore, inserted) =
+        request_map_.emplace(tid, std::move(record));
+    // Assert there was no collision on the key
+    assert(inserted);
+    request_queue_.push(tid);
+    return;
+  }
 
   // We assume the core does NOT have a running UM instance
   // i.e., umm::manager->Status() == empty
@@ -209,9 +215,26 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   is_running_ = true;
   umm::manager->runSV(); // blocks until umm::manager->Halt() is called 
   /* After instance is halted */
-  is_running_ = false;
   std::cout << "Unloading core #" << (size_t)ebbrt::Cpu::GetMine() << std::endl;
   umm::manager->Unload();
+  is_running_ = false;
+
+  // If there's a queued request, let's deploy it
+  if(!request_queue_.empty()){
+    auto tid = request_queue_.front();
+    request_queue_.pop();
+    auto req = request_map_.find(tid);
+    // TODO: fail gracefully, drop request
+    assert(req != request_map_.end());
+    auto req_vals = req->second;
+    auto args = req_vals.first;
+    auto code = req_vals.second;
+    request_map_.erase(tid);
+    // Invoke this function right away
+    std::cout << "Invoking queue request on core #" << (size_t)ebbrt::Cpu::GetMine()
+              << " (queue len: " << request_queue_.size() << ")" << std::endl;
+    Invoke(tid, 0, args, code);
+  }
 }
 
 void seuss::Invoker::Resolve(uint64_t tid, std::string ret) {

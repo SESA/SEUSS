@@ -79,6 +79,9 @@ private:
 
   // TODO: FIXME: XXX: locking...
   std::mutex m_;
+  typedef std::pair<std::string, std::string> invocation_request;
+  std::unordered_map<uint64_t, invocation_request> request_map_;
+  std::queue<uint64_t> request_queue_;
   std::unordered_map<uint32_t, ebbrt::Promise<void>> promise_map_;
   // TODO: move sv into a root Ebb?
   umm::UmSV base_um_env_;

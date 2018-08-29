@@ -51,20 +51,21 @@ seuss::Controller::ScheduleActivation(
   if(code.empty())
     code = openwhisk::couchdb::get_action(am.action_);
 
-  // TODO: cache the code locally
+  // TODO: cache the code locally?
 
   auto args = am.content_;
   uint64_t tid = am.transid_.id_; // OpenWhisk transaction id (unique)
   auto fid = std::hash<std::string>{}(am.revision_);
 
   std::cout << "CONTROLLER: scheduling activation on core #"
-            << (size_t)ebbrt::Cpu::GetMine() << ": " << am.to_json()
-            << std::endl
-            << "``` CODE:" << std::endl
-            << code << std::endl
-            << "``` ARGS:" << std::endl
-            << args << std::endl
-            << "```" << std::endl;
+            << (size_t)ebbrt::Cpu::GetMine() 
+           // << ": " << am.to_json()
+           // << std::endl
+           // << "``` CODE:" << std::endl
+           // << code << std::endl
+           // << "``` ARGS:" << std::endl
+           // << args << std::endl << "```" 
+           << std::endl;
 
   /* Capture a record of this Activation */
   ebbrt::Promise<openwhisk::msg::CompletionMessage> promise;
@@ -76,6 +77,7 @@ seuss::Controller::ScheduleActivation(
     // insert records into the hash tables
     std::tie(std::ignore, inserted) =
         record_map_.emplace(tid, std::move(record));
+    // Assert there was no collision on the key
     assert(inserted);
   }
 

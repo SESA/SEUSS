@@ -28,7 +28,9 @@ void seuss::Init(){
   umm::UmManager::Init();
   Invoker::Create(Invoker::global_id);
 
-  // Begin seuss invoker on each core (starting with this core)
+  seuss::invoker->Bootstrap();
+  // TODO: Begin seuss invoker on each core (starting with this core)
+  #if 0
   size_t my_cpu = ebbrt::Cpu::GetMine();
   size_t num_cpus = ebbrt::Cpu::Count();
   for (auto i = my_cpu; i < num_cpus; i++) {
@@ -39,6 +41,7 @@ void seuss::Init(){
         },
         i);
   }
+  #endif
 }
 
 /* class seuss::InvocationSession */
@@ -64,7 +67,17 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
   std::string proto_header = reply.substr(0, reply.find_first_of("\r"));
 
   // TODO: handle failure case
-  kassert(proto_header == "HTTP/1.1 200 OK");
+  if(proto_header != "HTTP/1.1 200 OK"){
+    std::cout << "FAILED REQUEST: " << reply << std::endl;
+    if (is_initialized_)
+      std::cout << "*** RUN ***: " << std::endl;
+    else
+      std::cout << "*** INIT ***: " << std::endl;
+    std::cout << function_code_ << std::endl;
+    std::cout << "*** ARGS **" << std::endl << run_args_ << std::endl;
+    std::cout << "*** ***" << std::endl;
+    ebbrt::kabort("HTTP request failed. ");
+  }
 
   std::string response = reply.substr(reply.find_first_of("{"));
 
@@ -78,6 +91,7 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
       SendHttpRequest("/run", run_args_);
   } else {
     // finished RUN, send results back to the invoker to resolve 
+    Shutdown();
     seuss::invoker->Resolve(run_id_, response);
   }
 }
@@ -104,8 +118,12 @@ std::string seuss::InvocationSession::http_post_request(std::string path,
                                                    std::string msg) {
   std::ostringstream payload;
   std::ostringstream ret;
+
   // strip newlines from msg
   msg.erase(std::remove(msg.begin(), msg.end(), '\n'), msg.end());
+  
+  kassert(msg.back() == '}');
+
   payload << "{\"value\": ";
   if (path == "/init") {
     payload << "{\"main\":\"main\", \"code\":\"" << msg << "\"}}";
@@ -160,14 +178,13 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
                             const std::string code) {
   kassert(is_bootstrapped_);
 
-  // XXX: Clean up ordering semantics here
-
-  /* If the instance is already RUNNING we should either:
-        1. Halt and re-deploy the base snapshot-ev
-        2. process RUN request, assuming the same fid
-        3. WAIT until current function finishes (could be a "faulty" request)
-     BUT For now, we'll just abort...
-  */
+  if (fid) {
+    std::cout << "Begining invocation #" << tid << " [" << code << "][" << args
+              << "]" << std::endl;
+  } else {
+    std::cout << "Restoring invocation #" << tid << " [" << code << "][" << args
+              << "]" << std::endl;
+  }
 
   // Queue up any concurrent calls to Invoke on this core!
   if (is_running_) {
@@ -187,6 +204,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   // i.e., umm::manager->Status() == empty
 
   kassert(!umsesh_);
+
 
   // Create a new session for invoking this function
   fid_ = fid;
@@ -240,8 +258,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
 void seuss::Invoker::Resolve(uint64_t tid, std::string ret) {
   std::cout << "Finished RUN #" << tid << " with result: " << ret << std::endl;
   seuss_channel->SendReply(ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), tid, fid_, ret);
-  // XXX: No need to clean up the TCP connection, its about to die anyway
-  delete umsesh_;
+  //delete umsesh_;
   umsesh_ = nullptr;
   umm::manager->Halt();
   

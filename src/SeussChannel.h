@@ -51,7 +51,7 @@ public:
 private:
   std::mutex m_;
   std::unordered_map<uint32_t, ebbrt::Promise<void>> promise_map_;
-  uint32_t id_{0};
+  uint32_t count_{0};
 };
 
 constexpr auto seuss_channel =

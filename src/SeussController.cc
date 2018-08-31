@@ -57,15 +57,15 @@ seuss::Controller::ScheduleActivation(
   uint64_t tid = am.transid_.id_; // OpenWhisk transaction id (unique)
   auto fid = std::hash<std::string>{}(am.revision_);
 
-  std::cout << "CONTROLLER: scheduling activation on core #"
-            << (size_t)ebbrt::Cpu::GetMine() 
+  //std::cout << "CONTROLLER: scheduling activation on core #"
+  //          << (size_t)ebbrt::Cpu::GetMine() 
            // << ": " << am.to_json()
            // << std::endl
            // << "``` CODE:" << std::endl
            // << code << std::endl
            // << "``` ARGS:" << std::endl
            // << args << std::endl << "```" 
-           << std::endl;
+           //<< std::endl;
 
   /* Capture a record of this Activation */
   ebbrt::Promise<openwhisk::msg::CompletionMessage> promise;

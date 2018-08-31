@@ -49,7 +49,7 @@ void openwhisk::test() {
       [am]() {
         uint16_t args;
         const std::string code =
-            R"(function main(args) { return {done:true, arg:args.mykey}; })";
+            R"(function main(args) { return {done:true, arg:args.mykey};})";
         /* FOR EACH STDIN, INVOKE THE FUNCTION N MANY TIMES */
         while (std::cin >> args) {
           if(!args)

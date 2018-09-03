@@ -94,9 +94,7 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
     } else {
       msg_buf = const_cast<uint8_t *>(dp.Data());
     }
-
     kassert(hdr.len >= hdr.record.args_size);
-
     // extract the activation arguments
     if (hdr.record.args_size) {
       args.assign(reinterpret_cast<const char *>(msg_buf),
@@ -125,7 +123,7 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
         },
         (size_t)count_ % ebbrt::Cpu::Count());
     // XXX: Only invoke on a single core (core 0) ..for now!
-    // count_++;
+    //count_++;
     break;
   case MsgType::reply:
     kabort("Received invocation reply on EbbRT (native)!?\n");

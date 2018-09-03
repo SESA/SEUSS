@@ -28,9 +28,8 @@ void seuss::Init(){
   umm::UmManager::Init();
   Invoker::Create(Invoker::global_id);
 
-  seuss::invoker->Bootstrap();
+  //seuss::invoker->Bootstrap();
   // TODO: Begin seuss invoker on each core (starting with this core)
-  #if 0
   size_t my_cpu = ebbrt::Cpu::GetMine();
   size_t num_cpus = ebbrt::Cpu::Count();
   for (auto i = my_cpu; i < num_cpus; i++) {
@@ -41,7 +40,6 @@ void seuss::Init(){
         },
         i);
   }
-  #endif
 }
 
 /* class seuss::InvocationSession */
@@ -147,10 +145,23 @@ void seuss::Invoker::Bootstrap() {
   // TODO: assert this hasent run yet
 
   // Generated UM Instance from the linked-in elf
+  //std::string opts = R"({"cmdline":"bin/node-default /nodejsActionBase/app.js", "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.0","mask":"16"}})";
+
+  std::ostringstream optstream;
+  optstream << R"({"cmdline":"bin/node-default /nodejsActionBase/app.js",
+ "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.)"
+       << (size_t)ebbrt::Cpu::GetMine() << R"(","mask":"16"}})";
+  std::string opts  = optstream.str();
+
   auto sv = umm::ElfLoader::createSVFromElf(&_sv_start);
   auto umi = std::make_unique<umm::UmInstance>(sv);
-  uint64_t argc = Solo5BootArguments(sv.GetRegionByName("usr").start, SOLO5_USR_REGION_SIZE);
+  uint64_t argc = Solo5BootArguments(sv.GetRegionByName("usr").start,
+                                     SOLO5_USR_REGION_SIZE, opts);
+
+  // Set the IP address
   umi->SetArguments(argc);
+  
+  std::cout << "UMI CMDLINE: " << umi->bi.cmdline << std::endl;
   
   // Load instance and set breakpoint for snapshot creation
   umm::manager->Load(std::move(umi));
@@ -224,7 +235,8 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
       [this] {
         // Start a new TCP connection with the http request
         // XXX: FIXED IP ADDRESS (NO MULTICORE)!
-        std::array<uint8_t, 4> umip = {{169, 254, 1, 0}};
+        size_t my_cpu = ebbrt::Cpu::GetMine();
+        std::array<uint8_t, 4> umip = {{169, 254, 1, my_cpu}};
         umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080);
       },
       /* force async */ true);

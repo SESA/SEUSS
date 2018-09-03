@@ -13,7 +13,6 @@
 #include <ebbrt/Messenger.h>
 #include <ebbrt/UniqueIOBuf.h>
 
-
 #include "SeussInvoker.h"
 #include "SeussChannel.h"
 
@@ -55,6 +54,10 @@ void seuss::InvocationSession::Connected() {
 
 void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
 
+  size_t event_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        ebbrt::clock::Wall::Now() - clock_)
+                        .count();
+
   kprintf_force("InvocationSession received response : len=%d\n links=%d",
                        b->ComputeChainDataLength(), b->CountChainElements());
 
@@ -84,13 +87,16 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
   // An "OK":true response signals a finished INIT 
   if(is_initialized_ == false && response == R"({"OK":true})"){
     is_initialized_ = true;
+    // Set init_time for the function
+    ar_.stats.init_time = event_time;
     // always RUN right after INIT is complete
     if(!run_args_.empty())
       SendHttpRequest("/run", run_args_);
   } else {
     // finished RUN, send results back to the invoker to resolve 
     Shutdown();
-    seuss::invoker->Resolve(run_id_, response);
+    ar_.stats.run_time = event_time;
+    seuss::invoker->Resolve(ar_, response);
   }
 }
 
@@ -109,6 +115,9 @@ void seuss::InvocationSession::SendHttpRequest(std::string path, std::string pay
   auto dp = buf->GetMutDataPointer();
   auto str_ptr = reinterpret_cast<char *>(dp.Data());
   msg.copy(str_ptr, msg.size());
+
+  // start timer
+  clock_ = ebbrt::clock::Wall::Now();
   Send(std::move(buf));
 }
 
@@ -223,8 +232,10 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
 
   // TODO: Remove arguments from Session constructor and set them via Method call
   // TODO: Or do it all via promise/futures
-  umsesh_ = new InvocationSession(std::move(pcb), args, code, tid);
-  umsesh_->Install();
+  ActivationRecord ac; 
+  ac.transaction_id = tid;
+  ac.function_id = fid;
+  umsesh_ = new InvocationSession(std::move(pcb), ac, args, code);
 
   // Load up the base environment
   auto umi2 = std::make_unique<umm::UmInstance>(base_um_env_);
@@ -236,7 +247,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
         // Start a new TCP connection with the http request
         // XXX: FIXED IP ADDRESS (NO MULTICORE)!
         size_t my_cpu = ebbrt::Cpu::GetMine();
-        std::array<uint8_t, 4> umip = {{169, 254, 1, my_cpu}};
+        std::array<uint8_t, 4> umip = {{169, 254, 1,(uint8_t)my_cpu}};
         umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080);
       },
       /* force async */ true);
@@ -267,12 +278,13 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   }
 }
 
-void seuss::Invoker::Resolve(uint64_t tid, std::string ret) {
-  std::cout << "Finished RUN #" << tid << " with result: " << ret << std::endl;
-  seuss_channel->SendReply(ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), tid, fid_, ret);
-  //delete umsesh_;
+void seuss::Invoker::Resolve(seuss::ActivationRecord ar, std::string ret) {
+  auto tid = ar.transaction_id;
+  std::cout << "Finished RUN #" << tid << std::endl;
+  seuss_channel->SendReply(
+      ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), ar, ret);
+  // delete umsesh_;
   umsesh_ = nullptr;
   umm::manager->Halt();
-  
 }
 

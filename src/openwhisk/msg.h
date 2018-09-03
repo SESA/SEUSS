@@ -80,7 +80,6 @@ public:
 
 class Response {
 public:
-  /* TODO: logs[], annotations [{},] */
   /* metadata */
   std::string activationId_;
   std::string name_;
@@ -88,6 +87,7 @@ public:
   std::string publish_ = "false";
   std::string subject_;
   std::string version_;
+  std::string annotations_;
   /* execution data */
   long long duration_;
   long long start_;
@@ -102,7 +102,8 @@ public:
            std::to_string(end_) + ",\"start\":" + std::to_string(start_) +
            ",\"namespace\":\"" + namespace_ + "\"" +
            ",\"response\":{\"statusCode\":" + std::to_string(status_code_) +
-           ",\"result\":" + result_ + "},\"logs\":[],\"annotations\":[]}";
+           ",\"result\":" + result_ + "},\"logs\":[],\"annotations\":[" +
+           annotations_ + "]}";
   };
 };
 

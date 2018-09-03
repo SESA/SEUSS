@@ -62,7 +62,7 @@ void openwhisk::test() {
             auto cmf = seuss::controller->ScheduleActivation(am_tmp, code);
             cmf.Then([i](auto f) {
               auto cm = f.Get();
-              std::cout << "INV #" << (i+1) << " returned successfully. " //<< cm.to_json()
+              std::cout << "INV #" << (i+1) << " returned successfully. " << cm.to_json()
                         << std::endl;
             });
           }

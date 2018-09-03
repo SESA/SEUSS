@@ -45,7 +45,7 @@ public:
   void SendRequest(ebbrt::Messenger::NetworkId nid, uint64_t id, size_t fid,
                    std::string code, std::string args);
 
-  void SendReply(ebbrt::Messenger::NetworkId nid, uint64_t id, size_t fid,
+  void SendReply(ebbrt::Messenger::NetworkId nid, ActivationRecord ac,
                    std::string args);
 
   void ReceiveMessage(ebbrt::Messenger::NetworkId nid,

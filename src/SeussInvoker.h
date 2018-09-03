@@ -9,6 +9,7 @@
 #error THIS IS EBBRT-NATIVE CODE
 #endif
 
+#include <ebbrt/Clock.h>
 #include <ebbrt/Debug.h>
 #include <ebbrt/Future.h>
 #include <ebbrt/MulticoreEbb.h>
@@ -17,16 +18,19 @@
 
 #include "umm/src/Umm.h"
 
+#include "Seuss.h"
+
 namespace seuss {
 
 void Init();
 
 class InvocationSession : public ebbrt::TcpHandler {
 public:
-  InvocationSession(ebbrt::NetworkManager::TcpPcb pcb, std::string args,
-                    std::string code, uint64_t tid)
-      : ebbrt::TcpHandler(std::move(pcb)), function_code_(code),
-        run_args_(args), run_id_(tid) {
+  InvocationSession(ebbrt::NetworkManager::TcpPcb pcb, ActivationRecord ar, std::string args,
+                    std::string code)
+      : ebbrt::TcpHandler(std::move(pcb)), ar_(ar), function_code_(code),
+        run_args_(args){
+    Install(); // Install TcbPcb handler
     once_connected = set_connected_.GetFuture();
   }
   /* TCP connection aborted */ 
@@ -43,13 +47,13 @@ public:
 
 private:
   std::string http_post_request(std::string path, std::string payload);
-  std::string function_code_;
   ebbrt::Promise<void> set_connected_;
   bool is_connected_{false};
   bool is_initialized_{false};
-  // RUN specific state
+  ActivationRecord ar_;
+  std::string function_code_;
   std::string run_args_;
-  uint64_t run_id_{0};
+  ebbrt::clock::Wall::time_point clock_;
 }; // class InvocationSession
 
 /*  suess::Invoker 
@@ -67,7 +71,7 @@ public:
   void Invoke(uint64_t tid, size_t fid, const std::string args,
               const std::string code);
   // Resolve invocation request
-  void Resolve(uint64_t tid, const std::string ret);
+  void Resolve(ActivationRecord ar, const std::string ret_args);
 
 private:
   bool is_bootstrapped_{false}; // Have we created a base snapshot

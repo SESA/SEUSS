@@ -26,8 +26,7 @@ void seuss::SeussChannel::Ping(ebbrt::Messenger::NetworkId nid){
   SendMessage(nid, std::move(buf));
 };
 
-void seuss::SeussChannel::SendReply(ebbrt::Messenger::NetworkId nid, uint64_t tid,
-                               size_t fid, std::string args) {
+void seuss::SeussChannel::SendReply(ebbrt::Messenger::NetworkId nid, ActivationRecord ar, std::string args) {
   // New IOBuf for the outgoing message
   auto buf =
       MakeUniqueIOBuf(sizeof(MsgHeader) + args.size());
@@ -35,9 +34,8 @@ void seuss::SeussChannel::SendReply(ebbrt::Messenger::NetworkId nid, uint64_t ti
   // Complete the message header
   auto &hdr = dp.Get<MsgHeader>();
   hdr.type = MsgType::reply;
-  hdr.record.transaction_id = tid; 
-  hdr.record.function_id = fid; 
-  hdr.record.args_size = args.size();
+  hdr.record = ar;
+  hdr.record.args_size = args.size(); // Is this nescessary? 
   // Copy in msg payload
   hdr.len = args.size();
   auto str_ptr = reinterpret_cast<char *>(dp.Data());
@@ -136,7 +134,7 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
     kabort("Received invocation request on Linux !?\n");
     break;
   case MsgType::reply:
-    seuss::controller->ResolveActivation(hdr.record.transaction_id, args);
+    seuss::controller->ResolveActivation(hdr.record, args);
     break;
 #endif
   } // end switch(hdr.type)

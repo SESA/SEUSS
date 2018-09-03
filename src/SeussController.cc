@@ -3,6 +3,7 @@
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
 #include <iostream>
+#include <sstream> /* std::ostringstream */
 
 #include "SeussChannel.h"
 #include "SeussController.h"
@@ -44,14 +45,11 @@ ebbrt::Future<openwhisk::msg::CompletionMessage>
 seuss::Controller::ScheduleActivation(
     const openwhisk::msg::ActivationMessage &am, std::string code ) {
 
-#if 0
-  /* XXX: WE HARD-CODE THE FUNCTION AND ARGUMENTS, IGNORING THE INPUT */
-  const std::string args = R"({"value": {"mykey":"my-secret-val"}})";
-#endif
-  if(code.empty())
-    code = openwhisk::couchdb::get_action(am.action_);
+  auto start = std::chrono::high_resolution_clock::now();
 
   // TODO: cache the code locally?
+  if(code.empty())
+    code = openwhisk::couchdb::get_action(am.action_);
 
   auto args = am.content_;
   uint64_t tid = am.transid_.id_; // OpenWhisk transaction id (unique)
@@ -70,7 +68,7 @@ seuss::Controller::ScheduleActivation(
   /* Capture a record of this Activation */
   ebbrt::Promise<openwhisk::msg::CompletionMessage> promise;
   auto ret = promise.GetFuture();
-  auto record = std::make_pair(std::move(promise), am);
+  auto record = std::make_tuple(std::move(promise), am, start);
   {
     std::lock_guard<std::mutex> guard(m_);
     bool inserted;
@@ -100,20 +98,31 @@ seuss::Controller::ScheduleActivation(
   return ret;
 }
 
-void seuss::Controller::ResolveActivation(uint64_t tid, std::string res){
-    // Lookup record in the hash table 
-    std::lock_guard<std::mutex> guard(m_);
-    auto it = record_map_.find(tid);
-    assert(it != record_map_.end());
-    auto record = std::move(it->second);
-    openwhisk::msg::CompletionMessage cm(record.second);
-    // TODO: Fill in the results
-    // TODO: set run times 
-    cm.response_.duration_ = 0;
-    cm.response_.start_ = 0;
-    cm.response_.end_ = 0;
-    cm.response_.status_code_ = 0; // alwasy success
-    cm.response_.result_ = res;
-    record.first.SetValue(cm);
-    record_map_.erase(it);
+void seuss::Controller::ResolveActivation(seuss::ActivationRecord ar, std::string res){
+  std::ostringstream annotations;
+  // Capture the ending time
+  auto end_time = std::chrono::high_resolution_clock::now();
+  // Lookup activation in the table
+  auto tid = ar.transaction_id;
+  std::lock_guard<std::mutex> guard(m_);
+  auto it = record_map_.find(tid);
+  assert(it != record_map_.end());
+  auto record_tuple = std::move(it->second);
+  openwhisk::msg::CompletionMessage cm(std::get<1>(record_tuple));
+
+  auto start_time = std::get<2>(record_tuple);
+  size_t total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          end_time - start_time)
+                          .count();
+  auto wait_time = total_time - ar.stats.run_time - ar.stats.init_time;
+  // annotations (waitTime, initTime)
+  annotations << R"({"key":"waitTime","value":)" << wait_time << R"(},{"key":"initTime","value":)"<< ar.stats.init_time << R"(})";
+  cm.response_.annotations_ = annotations.str();
+  cm.response_.duration_ = ar.stats.run_time;
+  cm.response_.start_ = 0;
+  cm.response_.end_ = 0;
+  cm.response_.status_code_ = 0; // alwasy success
+  cm.response_.result_ = res;
+  std::get<0>(record_tuple).SetValue(cm);
+  record_map_.erase(it);
 }

@@ -2,6 +2,8 @@
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
+#ifndef SEUSS_H
+#define SEUSS_H
 
 namespace seuss {
 
@@ -9,7 +11,6 @@ namespace seuss {
 struct ExecStats {
   size_t run_time;
   size_t init_time;
-  size_t wait_time;
 };
 
 /** Function activation record */
@@ -21,3 +22,4 @@ struct ActivationRecord {
 };
 
 } // end seuss
+#endif

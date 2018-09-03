@@ -9,6 +9,8 @@
 #error THIS IS LINUX-ONLY CODE
 #endif
 
+#include <chrono>
+#include <tuple>
 #include <unordered_map>
 
 #include <ebbrt/IOBuf.h>
@@ -20,6 +22,8 @@
 #include "dsys/dsys.h"
 
 #include "openwhisk/openwhisk.h"
+
+#include "Seuss.h"
 
 namespace seuss {
 
@@ -42,14 +46,14 @@ public:
 /* The final stage of a suess activation
   *  The activation result is passed back to OpenWhisk 
   */
-  void ResolveActivation(uint64_t tid, std::string res);
+  void ResolveActivation(ActivationRecord ar, std::string res);
 
   // Register an Invocation node
   void RegisterNode(ebbrt::Messenger::NetworkId nid);
 
 private:
-  typedef std::pair<ebbrt::Promise<openwhisk::msg::CompletionMessage>,
-                    openwhisk::msg::ActivationMessage>
+  typedef std::tuple<ebbrt::Promise<openwhisk::msg::CompletionMessage>,
+                    openwhisk::msg::ActivationMessage,std::chrono::high_resolution_clock::time_point>
       activation_record;
   std::vector<ebbrt::Messenger::NetworkId> _nids;
   std::unordered_map<std::string, size_t>

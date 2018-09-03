@@ -15,18 +15,20 @@
 
 #include "dsys/dsys.h"
 
-enum SeussMsgType : uint8_t {
+#include "Seuss.h"
+
+namespace seuss {
+
+enum MsgType : uint8_t {
   ping = 0,
   request,
   reply,
 };
 
-struct SeussMsgHeader {
-  SeussMsgType type;
-  uint64_t tid; // transaction id
-  size_t fid; // function id
-  size_t args_len;
-  size_t code_len;
+struct MsgHeader {
+  MsgType type;
+  size_t len;
+  ActivationRecord record;
 };
 
 // TODO(jmcadden): make this a multi-node Ebb
@@ -56,5 +58,7 @@ private:
 
 constexpr auto seuss_channel =
     ebbrt::EbbRef<SeussChannel>(SeussChannel::global_id);
+
+} // end namespace seuss
 
 #endif

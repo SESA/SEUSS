@@ -13,26 +13,33 @@
 #include <ebbrt/Debug.h>
 
 // This is *IMPORTANT*, it allows the messenger to resolve remote HandleFaults
-EBBRT_PUBLISH_TYPE(, SeussChannel);
+EBBRT_PUBLISH_TYPE(seuss, SeussChannel);
 
 using namespace ebbrt;
 
-SeussChannel::SeussChannel(ebbrt::EbbId ebbid)
+seuss::SeussChannel::SeussChannel(ebbrt::EbbId ebbid)
     : ebbrt::Messagable<SeussChannel>(ebbid) {}
 
-void SeussChannel::SendReply(ebbrt::Messenger::NetworkId nid, uint64_t tid,
+void seuss::SeussChannel::Ping(ebbrt::Messenger::NetworkId nid){
+  // Ping msg has no body and all header fields == 0
+  auto buf = MakeUniqueIOBuf(sizeof(MsgHeader), true);
+  SendMessage(nid, std::move(buf));
+};
+
+void seuss::SeussChannel::SendReply(ebbrt::Messenger::NetworkId nid, uint64_t tid,
                                size_t fid, std::string args) {
   // New IOBuf for the outgoing message
   auto buf =
-      MakeUniqueIOBuf(sizeof(SeussMsgHeader) + args.size());
+      MakeUniqueIOBuf(sizeof(MsgHeader) + args.size());
   auto dp = buf->GetMutDataPointer();
   // Complete the message header
-  auto &msg_header = dp.Get<SeussMsgHeader>();
-  msg_header.type = SeussMsgType::reply;
-  msg_header.tid = tid; 
-  msg_header.fid = fid; 
-  msg_header.args_len = args.size();
-  msg_header.code_len = 0;
+  auto &hdr = dp.Get<MsgHeader>();
+  hdr.type = MsgType::reply;
+  hdr.record.transaction_id = tid; 
+  hdr.record.function_id = fid; 
+  hdr.record.args_size = args.size();
+  // Copy in msg payload
+  hdr.len = args.size();
   auto str_ptr = reinterpret_cast<char *>(dp.Data());
   if (args.size() > 0) {
     args.copy(str_ptr, args.size());
@@ -40,20 +47,20 @@ void SeussChannel::SendReply(ebbrt::Messenger::NetworkId nid, uint64_t tid,
   SendMessage(nid, std::move(buf));
 }
 
-void SeussChannel::SendRequest(ebbrt::Messenger::NetworkId nid, uint64_t tid,
+void seuss::SeussChannel::SendRequest(ebbrt::Messenger::NetworkId nid, uint64_t tid,
                                size_t fid, std::string args, std::string code) {
   // New IOBuf for the outgoing message
   auto buf =
-      MakeUniqueIOBuf(sizeof(SeussMsgHeader) + args.size() + code.size());
+      MakeUniqueIOBuf(sizeof(MsgHeader) + args.size() + code.size());
   auto dp = buf->GetMutDataPointer();
   // Complete the message header
-  auto &msg_header = dp.Get<SeussMsgHeader>();
-  msg_header.type = SeussMsgType::request;
-  msg_header.tid = tid; 
-  msg_header.fid = fid; 
-  msg_header.args_len = args.size();
-  msg_header.code_len = code.size();
-  // Copy in the payloads
+  auto &hdr = dp.Get<MsgHeader>();
+  hdr.type = MsgType::request;
+  hdr.record.transaction_id = tid; 
+  hdr.record.function_id = fid; 
+  hdr.record.args_size = args.size();
+  // Copy in msg payload
+  hdr.len = args.size() + code.size();
   auto str_ptr = reinterpret_cast<char *>(dp.Data());
   if (args.size() > 0) {
     args.copy(str_ptr, args.size());
@@ -66,74 +73,74 @@ void SeussChannel::SendRequest(ebbrt::Messenger::NetworkId nid, uint64_t tid,
   SendMessage(nid, std::move(buf));
 }
 
-void SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
+void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
                     std::unique_ptr<ebbrt::IOBuf> &&buf){
-	std::string msg;
+  uint8_t *msg_buf;
   std::string args;
   std::string code;
-  uint8_t *msg_buf;
-	auto buf_len =buf->ComputeChainDataLength();
-	auto segment_len = buf->Length();
+	auto buf_len = buf->ComputeChainDataLength();
 
   // check the header to ditermine the message type
-  kassert(buf_len >= sizeof(SeussMsgHeader));
+  kassert(buf->Length() >= sizeof(MsgHeader));
   auto dp = buf->GetDataPointer();
-  auto& msg_header = dp.Get<SeussMsgHeader>();
-  switch(msg_header.type){
-    case SeussMsgType::ping:
-      // TODO: pong?
-      kprintf_force("SeussChannel - ping!\n");
-      break;
-    case SeussMsgType::request:
-      // Copy msg into a continous buffer 
-      msg_buf = (uint8_t*)malloc(buf_len);
-      dp.Get(buf_len, msg_buf);
-			msg = std::string(reinterpret_cast<const char *>(msg_buf), buf_len);
-			//msg.assign(reinterpret_cast<const char *>(msg_buf), buf_len);
-      // extract the payload strings
-      if( msg_header.args_len){
-        args.assign(reinterpret_cast<const char *>(msg_buf), msg_header.args_len);
-      }
-      if( msg_header.code_len){
-        code.assign(reinterpret_cast<const char *>(msg_buf + msg_header.args_len),
-                    msg_header.code_len);
-      }
-      if (buf_len != segment_len) {
-        kprintf_force("MESSAGE MISMATCH #%lu len=%d clen=%d\n", msg_header.tid, segment_len,
-                      buf_len);
-				std::cout << "MSG:[" << msg  << "]" << std::endl;
-				std::cout << "ARGS: [" << args << "]" << "  CODE: [" << code << "]" << std::endl;
-      }
-#ifdef __ebbrt__
-      /* Call the invoker to spawn the action */
-      ebbrt::event_manager->SpawnRemote(
-          [msg_header, args, code]() {
-            seuss::invoker->Invoke(msg_header.tid, msg_header.fid, args, code);
-          },
-          (size_t)count_ % ebbrt::Cpu::Count());
-      // XXX: Only invoke on a single core (core 0) ..for now!
-      //count_++;
-#else
-      kabort("Received invocation request on Linux !?\n");
-#endif
-      break;
-    case SeussMsgType::reply:
-      if (msg_header.args_len) {
-        args.assign(reinterpret_cast<const char *>(dp.Data()),
-                    msg_header.args_len);
-      }
-#ifdef __ebbrt__
-      kabort("Received invocation reply on EbbRT (native)!?\n");
-#else
-      seuss::controller->ResolveActivation(msg_header.tid, args);
-#endif
-      break;
-  }
-};
+  auto& hdr = dp.Get<MsgHeader>();
 
-void SeussChannel::Ping(ebbrt::Messenger::NetworkId nid){
-  // Ping msg has no body and all header fields == 0
-  auto buf = MakeUniqueIOBuf(sizeof(SeussMsgHeader), true);
-  SendMessage(nid, std::move(buf));
+  // Extract the message payload(s)
+  if (hdr.len > 0) {
+    // If we have a chained IO buf allocate a continous buffer and copy in msg
+    if (buf->IsChained()) {
+      msg_buf = (uint8_t *)malloc(buf_len);
+      dp.Get(buf_len, msg_buf);
+    } else {
+      msg_buf = const_cast<uint8_t *>(dp.Data());
+    }
+
+    kassert(hdr.len >= hdr.record.args_size);
+
+    // extract the activation arguments
+    if (hdr.record.args_size) {
+      args.assign(reinterpret_cast<const char *>(msg_buf),
+                  hdr.record.args_size);
+    }
+    // Any additional payload data treat as function code
+    if (hdr.len > hdr.record.args_size) {
+      code.assign(
+          reinterpret_cast<const char *>(msg_buf + hdr.record.args_size),
+          (hdr.len - hdr.record.args_size));
+    }
+  }
+
+  // Process the message type
+  switch (hdr.type) {
+#ifdef __ebbrt__ /* Native (EbbRT) */
+  case MsgType::ping:
+    kprintf_force("SeussChannel - ping!\n");
+    break;
+  case MsgType::request:
+    /* Call the invoker to spawn the action */
+    ebbrt::event_manager->SpawnRemote(
+        [hdr, args, code]() {
+          seuss::invoker->Invoke(hdr.record.transaction_id,
+                                 hdr.record.function_id, args, code);
+        },
+        (size_t)count_ % ebbrt::Cpu::Count());
+    // XXX: Only invoke on a single core (core 0) ..for now!
+    // count_++;
+    break;
+  case MsgType::reply:
+    kabort("Received invocation reply on EbbRT (native)!?\n");
+    break;
+#else /* Hosted (Linux) */
+  case MsgType::ping:
+    kprintf_force("SeussChannel - pong!\n");
+    break;
+  case MsgType::request:
+    kabort("Received invocation request on Linux !?\n");
+    break;
+  case MsgType::reply:
+    seuss::controller->ResolveActivation(hdr.record.transaction_id, args);
+    break;
+#endif
+  } // end switch(hdr.type)
 };
 

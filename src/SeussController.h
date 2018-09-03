@@ -32,12 +32,19 @@ public:
   // Constructor
   Controller(ebbrt::EbbId ebbid);
 
+  /* The starting point of a seuss activation 
+  *  The waitTime of an activation begins when this method is called
+  */
   ebbrt::Future<openwhisk::msg::CompletionMessage>
   ScheduleActivation(const openwhisk::msg::ActivationMessage &am,
                      std::string code = std::string());
-  void  ResolveActivation(uint64_t tid, std::string res);
+  
+/* The final stage of a suess activation
+  *  The activation result is passed back to OpenWhisk 
+  */
+  void ResolveActivation(uint64_t tid, std::string res);
 
-  // Node allocation functions
+  // Register an Invocation node
   void RegisterNode(ebbrt::Messenger::NetworkId nid);
 
 private:

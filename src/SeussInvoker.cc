@@ -62,9 +62,6 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
                         ebbrt::clock::Wall::Now() - clock_)
                         .count();
 
-  kprintf_force("InvocationSession received response : len=%d\n links=%d",
-                       b->ComputeChainDataLength(), b->CountChainElements());
-
   //TODO: support chain and incomplete buffers (i.e., large replies)
   kassert(!b->IsChained());
 
@@ -134,8 +131,16 @@ std::string seuss::InvocationSession::http_post_request(std::string path,
   // strip newlines from msg
   msg.erase(std::remove(msg.begin(), msg.end(), '\n'), msg.end());
   
-  kassert(msg.back() == '}');
+  if(msg.back() != '}'){
+    kprintf_force("***** START FUNCTION FORMAT ERROR *******\n");
+    kprintf_force("***** type=%s len=%d\n", path.c_str(), msg.size());
+    kprintf_force("***** msg.back=%c", msg.back());
+    kprintf_force("***** msg=%s", msg.c_str());
+    kprintf_force("***** END FUNCTION FORMAT ERROR *******\n");
+    kassert(msg.back() == '}');
+  }
 
+  // Construct OpenWhisk input string
   payload << "{\"value\": ";
   if (path == "/init") {
     payload << "{\"main\":\"main\", \"code\":\"" << msg << "\"}}";
@@ -195,7 +200,7 @@ void seuss::Invoker::Bootstrap() {
 void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
                             const std::string code) {
   kassert(is_bootstrapped_);
-
+#if 0
   if (fid) {
     std::cout << "Begining invocation #" << tid << " [" << code << "][" << args
               << "]" << std::endl;
@@ -203,6 +208,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
     std::cout << "Restoring invocation #" << tid << " [" << code << "][" << args
               << "]" << std::endl;
   }
+#endif
 
   // Queue up any concurrent calls to Invoke on this core!
   if (is_running_) {
@@ -252,7 +258,6 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   is_running_ = true;
   umm::manager->runSV(); // blocks until umm::manager->Halt() is called 
   /* After instance is halted */
-  std::cout << "Unloading core #" << (size_t)ebbrt::Cpu::GetMine() << std::endl;
   umm::manager->Unload();
   is_running_ = false;
 
@@ -268,15 +273,15 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
     auto code = req_vals.second;
     request_map_.erase(tid);
     // Invoke this function right away
-    std::cout << "Invoking queue request on core #" << (size_t)ebbrt::Cpu::GetMine()
-              << " (queue len: " << request_queue_.size() << ")" << std::endl;
+    //std::cout << "Invoking queue request on core #" << (size_t)ebbrt::Cpu::GetMine()
+    //          << " (queue len: " << request_queue_.size() << ")" << std::endl;
     Invoke(tid, 0, args, code);
   }
 }
 
 void seuss::Invoker::Resolve(seuss::ActivationRecord ar, std::string ret) {
   auto tid = ar.transaction_id;
-  std::cout << "Finished RUN #" << tid << std::endl;
+  std::cout << "Finished transaction #" << tid << std::endl;
   seuss_channel->SendReply(
       ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), ar, ret);
   delete umsesh_;

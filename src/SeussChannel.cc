@@ -27,6 +27,13 @@ void seuss::SeussChannel::Ping(ebbrt::Messenger::NetworkId nid){
 };
 
 void seuss::SeussChannel::SendReply(ebbrt::Messenger::NetworkId nid, ActivationRecord ar, std::string args) {
+#ifdef __ebbrt__ /* Native (EbbRT) */
+  if ((size_t)ebbrt::Cpu::GetMine() != io_core) {
+    ebbrt::event_manager->SpawnRemote([=]() { SendReply(nid, ar, args); },
+                                      io_core);
+    return;
+  }
+#endif
   // New IOBuf for the outgoing message
   auto buf =
       MakeUniqueIOBuf(sizeof(MsgHeader) + args.size());
@@ -76,16 +83,22 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
   uint8_t *msg_buf;
   std::string args;
   std::string code;
-	auto buf_len = buf->ComputeChainDataLength();
+  auto buf_len = buf->ComputeChainDataLength();
+
+  // Set the IO core of the messenger
+  if (unlikely((size_t)ebbrt::Cpu::GetMine() != io_core)) {
+    io_core = (size_t)ebbrt::Cpu::GetMine();
+  }
 
   // check the header to ditermine the message type
-  kassert(buf->Length() >= sizeof(MsgHeader));
+  kassert(buf_len >= sizeof(MsgHeader));
   auto dp = buf->GetDataPointer();
-  auto& hdr = dp.Get<MsgHeader>();
+  auto hdr = dp.Get<MsgHeader>();
 
   // Extract the message payload(s)
   if (hdr.len > 0) {
-    // If we have a chained IO buf allocate a continous buffer and copy in msg
+    // If we have a chained IO buf allocate a continous buffer and copy in
+    // msg
     if (buf->IsChained()) {
       msg_buf = (uint8_t *)malloc(buf_len);
       dp.Get(buf_len, msg_buf);
@@ -113,15 +126,15 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
     kprintf_force("SeussChannel - ping!\n");
     break;
   case MsgType::request:
+    /* Round robin between secondary cores */
     /* Call the invoker to spawn the action */
     ebbrt::event_manager->SpawnRemote(
         [hdr, args, code]() {
           seuss::invoker->Invoke(hdr.record.transaction_id,
                                  hdr.record.function_id, args, code);
         },
-        (size_t)count_ % ebbrt::Cpu::Count());
-    // XXX: Only invoke on a single core (core 0) ..for now!
-    //count_++;
+        (count_ % ebbrt::Cpu::Count())); // cycle invocations between cores 
+    count_++;
     break;
   case MsgType::reply:
     kabort("Received invocation reply on EbbRT (native)!?\n");

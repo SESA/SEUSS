@@ -27,17 +27,21 @@ void seuss::Init(){
   umm::UmManager::Init();
   Invoker::Create(Invoker::global_id);
 
-  //seuss::invoker->Bootstrap();
-  // TODO: Begin seuss invoker on each core (starting with this core)
+  // Initialize a seuss invoker on each core 
   size_t my_cpu = ebbrt::Cpu::GetMine();
   size_t num_cpus = ebbrt::Cpu::Count();
+  kassert(my_cpu == 0);
   for (auto i = my_cpu; i < num_cpus; i++) {
+    ebbrt::Promise<void> p; 
+    auto f = p.GetFuture();
     ebbrt::event_manager->SpawnRemote(
-        [i]() {
+        [i, &p]() {
           kprintf("Begin seuss invoker on core #%d\n", i);
           seuss::invoker->Bootstrap();
+          p.SetValue();
         },
         i);
+    f.Block();
   }
 }
 
@@ -93,9 +97,10 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
     if(!run_args_.empty())
       SendHttpRequest("/run", run_args_);
   } else {
-    // finished RUN, send results back to the invoker to resolve 
-    Shutdown();
+    // Force disconnect of the TCP connection
+    Pcb().Disconnect();
     ar_.stats.run_time = event_time;
+    // finished RUN, send results back to the invoker to resolve 
     seuss::invoker->Resolve(ar_, response);
   }
 }
@@ -149,12 +154,8 @@ std::string seuss::InvocationSession::http_post_request(std::string path,
 /* class suess::Invoker */
 
 void seuss::Invoker::Bootstrap() {
+  kassert(!is_bootstrapped_);
   kprintf_force("Bootstrap invocation instance on core #%d\n", (size_t)ebbrt::Cpu::GetMine());
-
-  // TODO: assert this hasent run yet
-
-  // Generated UM Instance from the linked-in elf
-  //std::string opts = R"({"cmdline":"bin/node-default /nodejsActionBase/app.js", "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.0","mask":"16"}})";
 
   std::ostringstream optstream;
   optstream << R"({"cmdline":"bin/node-default /nodejsActionBase/app.js",
@@ -169,9 +170,6 @@ void seuss::Invoker::Bootstrap() {
 
   // Set the IP address
   umi->SetArguments(argc);
-  
-  std::cout << "UMI CMDLINE: " << umi->bi.cmdline << std::endl;
-  
   // Load instance and set breakpoint for snapshot creation
   umm::manager->Load(std::move(umi));
   ebbrt::Future<umm::UmSV> snap_f = umm::manager->SetCheckpoint(
@@ -221,10 +219,8 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   }
 
   // We assume the core does NOT have a running UM instance
-  // i.e., umm::manager->Status() == empty
-
+  // TODO: verify that umm::manager->Status() == empty
   kassert(!umsesh_);
-
 
   // Create a new session for invoking this function
   fid_ = fid;
@@ -283,7 +279,7 @@ void seuss::Invoker::Resolve(seuss::ActivationRecord ar, std::string ret) {
   std::cout << "Finished RUN #" << tid << std::endl;
   seuss_channel->SendReply(
       ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), ar, ret);
-  // delete umsesh_;
+  delete umsesh_;
   umsesh_ = nullptr;
   umm::manager->Halt();
 }

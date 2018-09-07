@@ -28,7 +28,10 @@ ebbrt::dsys::Controller::AllocateNativeInstances(std::string binary_path) {
   kassert(!binary_path.empty());
   struct timeval START_TIME;
   gettimeofday(&START_TIME, NULL);
-  auto node_desc = ebbrt::node_allocator->AllocateNode(binary_path);
+  ebbrt::NodeAllocator::NodeArgs args;
+  args.cpus = 4;
+  args.ram = 12;
+  auto node_desc = ebbrt::node_allocator->AllocateNode(binary_path, args);
   node_desc.NetworkId().Then([START_TIME](
       ebbrt::Future<ebbrt::Messenger::NetworkId> f) {
       struct timeval END_TIME;

@@ -11,6 +11,7 @@ namespace seuss {
 struct ExecStats {
   size_t run_time;
   size_t init_time;
+  bool status; // success=0 failed=1
 };
 
 /** Function activation record */

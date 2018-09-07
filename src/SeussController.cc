@@ -89,8 +89,6 @@ seuss::Controller::ScheduleActivation(
   auto nid_io_cpu = _frontEnd_cpus_map[nid.ToString()];
   ebbrt::event_manager->SpawnRemote(
       [this, nid, tid, fid, code, args]() {
-        std::cout << "Sending Activation request on core "
-                  << (size_t)ebbrt::Cpu::GetMine() << std::endl;
         seuss_channel->SendRequest(nid, tid, fid, args, code);
       },
       ebbrt::Cpu::GetByIndex(nid_io_cpu)->get_context());
@@ -121,7 +119,7 @@ void seuss::Controller::ResolveActivation(seuss::ActivationRecord ar, std::strin
   cm.response_.duration_ = ar.stats.run_time;
   cm.response_.start_ = 0;
   cm.response_.end_ = 0;
-  cm.response_.status_code_ = 0; // alwasy success
+  cm.response_.status_code_ = ar.stats.status; 
   cm.response_.result_ = res;
   std::get<0>(record_tuple).SetValue(cm);
   record_map_.erase(it);

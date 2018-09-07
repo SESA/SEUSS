@@ -30,19 +30,29 @@ public:
                     std::string code)
       : ebbrt::TcpHandler(std::move(pcb)), ar_(ar), function_code_(code),
         run_args_(args){
+    // TODO: Move this to the cc file
     Install(); // Install TcbPcb handler
     once_connected = set_connected_.GetFuture();
   }
-  /* TCP connection aborted */ 
+
+  /* Handler call for when the TCP connection is aborted */ 
   void Abort();
-  /* TCP connection closed */ 
+
+  /* Handler call for when the TCP connection is closed */ 
   void Close();
-  /* TCP connection established */ 
+
+  /* Handler call for when the TCP connection is established */ 
   void Connected();
-  /* Send HTTP request */ 
+
+  /* Send an OpenWhisk formatted HTTP request */ 
   void SendHttpRequest(std::string path, std::string payload);
+
   /* TCP connection receive data */ 
   void Receive(std::unique_ptr<ebbrt::MutIOBuf> b);
+
+  /* finished the invocation and pass reponse to Invoker */ 
+  void Finish(std::string Response);
+
   ebbrt::Future<void> once_connected;
 
 private:

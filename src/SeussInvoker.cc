@@ -36,13 +36,14 @@ void seuss::Init(){
     auto f = p.GetFuture();
     ebbrt::event_manager->SpawnRemote(
         [i, &p]() {
-          kprintf("Begin seuss invoker on core #%d\n", i);
+          kprintf("Core %d: Begin Seuss Invoker\n", i);
           seuss::invoker->Bootstrap();
           p.SetValue();
         },
         i);
     f.Block();
   }
+  kprintf_force("\n Finished initialization of all Seuss Invoker cores \n");
 }
 
 /* class seuss::InvocationSession */
@@ -51,58 +52,52 @@ void seuss::InvocationSession::Connected() {
     // We've established a connection with the instance
     set_connected_.SetValue();
     is_connected_ = true;
-    // Send code to be initialized 
+    // Send INIT request with code to be initialized 
     if (!function_code_.empty())
       SendHttpRequest("/init", function_code_);
 }
 
 void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
-
-  size_t event_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        ebbrt::clock::Wall::Now() - clock_)
-                        .count();
+  size_t response_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             ebbrt::clock::Wall::Now() - clock_)
+                             .count();
 
   //TODO: support chain and incomplete buffers (i.e., large replies)
   kassert(!b->IsChained());
 
+  /* construct a string of the response message */
   std::string reply(reinterpret_cast<const char *>(b->Data()), b->Length());
-  std::string proto_header = reply.substr(0, reply.find_first_of("\r"));
-
-  // TODO: handle failure case
-  if(proto_header != "HTTP/1.1 200 OK"){
-    std::cout << "FAILED REQUEST: " << reply << std::endl;
-    if (is_initialized_)
-      std::cout << "*** RUN ***: " << std::endl;
-    else
-      std::cout << "*** INIT ***: " << std::endl;
-    std::cout << function_code_ << std::endl;
-    std::cout << "*** ARGS **" << std::endl << run_args_ << std::endl;
-    std::cout << "*** ***" << std::endl;
-    ebbrt::kabort("HTTP request failed. ");
-  }
-
   std::string response = reply.substr(reply.find_first_of("{"));
+  std::string http_status = reply.substr(0, reply.find_first_of("\r"));
 
-  std::cout << "RESPONSE: " << response << std::endl;
-
-  // An "OK":true response signals a finished INIT 
-  if(is_initialized_ == false && response == R"({"OK":true})"){
+  /* Verify if the http request was successful */
+  if(http_status != "HTTP/1.1 200 OK"){
+    ar_.stats.status = 1; /* INVOCATION FAILED */
+    Finish(response);
+  }
+  /* An {"OK":true} response signals a completed INIT */
+  if (response == R"({"OK":true})" && !is_initialized_) {
     is_initialized_ = true;
-    // Set init_time for the function
-    ar_.stats.init_time = event_time;
-    // always RUN right after INIT is complete
-    if(!run_args_.empty())
+    ar_.stats.init_time = response_time;
+    // Start the RUN request 
+    if (!run_args_.empty())
       SendHttpRequest("/run", run_args_);
-  } else {
-    // Force disconnect of the TCP connection
-    Pcb().Disconnect();
-    ar_.stats.run_time = event_time;
-    // finished RUN, send results back to the invoker to resolve 
-    seuss::invoker->Resolve(ar_, response);
+  }
+  /* Any other response signals a completed RUN */
+  else {
+    ar_.stats.run_time = response_time;
+    ar_.stats.status = 0; /* INVOCATION SUCCESSFUL */
+    Finish(response);
   }
 }
 
-void seuss::InvocationSession::Close(){
+void seuss::InvocationSession::Finish(std::string response) {
+  // Force disconnect of the TCP connection
+  Pcb().Disconnect();
+  seuss::invoker->Resolve(ar_, response);
+}
+
+void seuss::InvocationSession::Close() {
   kprintf_force("InvocationSession closed!\n");
 }
 
@@ -110,49 +105,40 @@ void seuss::InvocationSession::Abort() {
   kprintf_force("InvocationSession aborted!\n");
 }
 
-void seuss::InvocationSession::SendHttpRequest(std::string path, std::string payload) {
+void seuss::InvocationSession::SendHttpRequest(std::string path,
+                                               std::string payload) {
   kassert(payload.size() > 0);
   std::string msg = http_post_request(path, payload);
   auto buf = ebbrt::MakeUniqueIOBuf(msg.size());
   auto dp = buf->GetMutDataPointer();
   auto str_ptr = reinterpret_cast<char *>(dp.Data());
   msg.copy(str_ptr, msg.size());
-
-  // start timer
   clock_ = ebbrt::clock::Wall::Now();
   Send(std::move(buf));
 }
 
 std::string seuss::InvocationSession::http_post_request(std::string path,
-                                                   std::string msg) {
+                                                        std::string msg) {
   std::ostringstream payload;
   std::ostringstream ret;
 
-  // strip newlines from msg
+  // construct json payload formatted for OpenWhisk ActonRunner
   msg.erase(std::remove(msg.begin(), msg.end(), '\n'), msg.end());
-  
-  if(msg.back() != '}'){
-    kprintf_force("***** START FUNCTION FORMAT ERROR *******\n");
-    kprintf_force("***** type=%s len=%d\n", path.c_str(), msg.size());
-    kprintf_force("***** msg.back=%c", msg.back());
-    kprintf_force("***** msg=%s", msg.c_str());
-    kprintf_force("***** END FUNCTION FORMAT ERROR *******\n");
-    kassert(msg.back() == '}');
-  }
-
-  // Construct OpenWhisk input string
   payload << "{\"value\": ";
   if (path == "/init") {
     payload << "{\"main\":\"main\", \"code\":\"" << msg << "\"}}";
   } else {
     payload << msg << "}";
   }
+
+  // build http message header + body
   auto body = payload.str();
   ret << "POST " << path << " HTTP/1.0\r\n"
       << "Content-Type: application/json\r\n"
       << "Connection: keep-alive\r\n"
       << "content-length: " << body.size() << "\r\n\r\n"
       << body;
+
   return ret.str();
 }
 
@@ -160,7 +146,7 @@ std::string seuss::InvocationSession::http_post_request(std::string path,
 
 void seuss::Invoker::Bootstrap() {
   kassert(!is_bootstrapped_);
-  kprintf_force("Bootstrap invocation instance on core #%d\n", (size_t)ebbrt::Cpu::GetMine());
+  kprintf_force("Bootstrapping Invoker on core #%d\n", (size_t)ebbrt::Cpu::GetMine());
 
   std::ostringstream optstream;
   optstream << R"({"cmdline":"bin/node-default /nodejsActionBase/app.js",
@@ -193,22 +179,12 @@ void seuss::Invoker::Bootstrap() {
   // Return once manager->Halt() is called 
   umm::manager->Unload();
   is_bootstrapped_ = true;
-  kprintf_force("Finish Invoker bootstrap on core #%d\n", (size_t)ebbrt::Cpu::GetMine());
   return;
 }
 
 void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
                             const std::string code) {
   kassert(is_bootstrapped_);
-#if 0
-  if (fid) {
-    std::cout << "Begining invocation #" << tid << " [" << code << "][" << args
-              << "]" << std::endl;
-  } else {
-    std::cout << "Restoring invocation #" << tid << " [" << code << "][" << args
-              << "]" << std::endl;
-  }
-#endif
 
   // Queue up any concurrent calls to Invoke on this core!
   if (is_running_) {
@@ -227,14 +203,14 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   // We assume the core does NOT have a running UM instance
   // TODO: verify that umm::manager->Status() == empty
   kassert(!umsesh_);
+  kprintf("Core %d: Start invocation #%d for function #%d\n", (size_t)ebbrt::Cpu::GetMine(), tid);
 
-  // Create a new session for invoking this function
+  // Create a new session this invocation 
   fid_ = fid;
   ebbrt::NetworkManager::TcpPcb pcb;
-
   // TODO: Remove arguments from Session constructor and set them via Method call
   // TODO: Or do it all via promise/futures
-  ActivationRecord ac; 
+  ActivationRecord ac={0}; 
   ac.transaction_id = tid;
   ac.function_id = fid;
   umsesh_ = new InvocationSession(std::move(pcb), ac, args, code);
@@ -272,16 +248,13 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
     auto args = req_vals.first;
     auto code = req_vals.second;
     request_map_.erase(tid);
-    // Invoke this function right away
-    //std::cout << "Invoking queue request on core #" << (size_t)ebbrt::Cpu::GetMine()
-    //          << " (queue len: " << request_queue_.size() << ")" << std::endl;
+    // Invoke the function 
+    kprintf("CORE %u: Pulling request #%lu from queue (qlen=%d)\n", (size_t)ebbrt::Cpu::GetMine(), tid, request_queue_.size());
     Invoke(tid, 0, args, code);
   }
 }
 
 void seuss::Invoker::Resolve(seuss::ActivationRecord ar, std::string ret) {
-  auto tid = ar.transaction_id;
-  std::cout << "Finished transaction #" << tid << std::endl;
   seuss_channel->SendReply(
       ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), ar, ret);
   delete umsesh_;

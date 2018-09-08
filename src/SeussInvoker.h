@@ -32,7 +32,6 @@ public:
         run_args_(args){
     // TODO: Move this to the cc file
     Install(); // Install TcbPcb handler
-    once_connected = set_connected_.GetFuture();
   }
 
   /* Handler call for when the TCP connection is aborted */ 
@@ -53,11 +52,13 @@ public:
   /* finished the invocation and pass reponse to Invoker */ 
   void Finish(std::string Response);
 
-  ebbrt::Future<void> once_connected;
+  ebbrt::SharedFuture<void> WhenConnected();
+  ebbrt::SharedFuture<void> WhenInitialized();
 
 private:
   std::string http_post_request(std::string path, std::string payload);
-  ebbrt::Promise<void> set_connected_;
+  ebbrt::Promise<void> connected_;
+  ebbrt::Promise<void> initialized_;
   bool is_connected_{false};
   bool is_initialized_{false};
   ActivationRecord ar_;

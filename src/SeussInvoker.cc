@@ -50,11 +50,12 @@ void seuss::Init(){
 
 void seuss::InvocationSession::Connected() {
     // We've established a connection with the instance
-    set_connected_.SetValue();
-    is_connected_ = true;
-    // Send INIT request with code to be initialized 
-    if (!function_code_.empty())
-      SendHttpRequest("/init", function_code_);
+    // Trigger 'WhenConnected().Then()' logic on a new event context
+    ebbrt::event_manager->SpawnLocal(
+        [this]() {
+          is_connected_ = true;
+          connected_.SetValue();
+        });
 }
 
 void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
@@ -77,11 +78,13 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
   }
   /* An {"OK":true} response signals a completed INIT */
   if (response == R"({"OK":true})" && !is_initialized_) {
-    is_initialized_ = true;
     ar_.stats.init_time = response_time;
-    // Start the RUN request 
-    if (!run_args_.empty())
-      SendHttpRequest("/run", run_args_);
+    // Trigger 'WhenInitialized().Then()' logic on a new event context
+    ebbrt::event_manager->SpawnLocal(
+        [this]() {
+          is_initialized_ = true;
+          initialized_.SetValue();
+        });
   }
   /* Any other response signals a completed RUN */
   else {
@@ -115,6 +118,14 @@ void seuss::InvocationSession::SendHttpRequest(std::string path,
   msg.copy(str_ptr, msg.size());
   clock_ = ebbrt::clock::Wall::Now();
   Send(std::move(buf));
+}
+
+ebbrt::SharedFuture<void> seuss::InvocationSession::WhenConnected(){
+  return connected_.GetFuture().Share();
+}
+
+ebbrt::SharedFuture<void> seuss::InvocationSession::WhenInitialized(){
+  return initialized_.GetFuture().Share();
 }
 
 std::string seuss::InvocationSession::http_post_request(std::string path,
@@ -215,11 +226,9 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   ac.function_id = fid;
   umsesh_ = new InvocationSession(std::move(pcb), ac, args, code);
 
-  // Load up the base environment
-  auto umi2 = std::make_unique<umm::UmInstance>(base_um_env_);
-  umm::manager->Load(std::move(umi2));
+  /* Setup the asyncronous operations on the InvocationSession */
 
-  // Asynchronously try an setup a connection with the running UMI 
+  // Setup a connection with the running instance 
   ebbrt::event_manager->SpawnLocal(
       [this] {
         // Start a new TCP connection with the http request
@@ -229,6 +238,17 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
         umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080);
       },
       /* force async */ true);
+
+  umsesh_->WhenConnected().Then(
+      [this, code](auto f) { umsesh_->SendHttpRequest("/init", code); });
+
+  umsesh_->WhenInitialized().Then(
+      [this, args](auto f) { umsesh_->SendHttpRequest("/run", args); });
+
+
+  /* Load up the base snapshot environment */
+  auto umi2 = std::make_unique<umm::UmInstance>(base_um_env_);
+  umm::manager->Load(std::move(umi2));
 
   /* Boot the snapshot */
   is_running_ = true;

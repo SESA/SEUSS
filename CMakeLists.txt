@@ -48,7 +48,7 @@ if( ${CMAKE_SYSTEM_NAME} STREQUAL "EbbRT")
   add_executable(seuss.elf ${BAREMETAL_SOURCES} )
   target_link_libraries(seuss.elf ${EBBRT-ZOOKEEPER_LIBRARIES} ${EBBRT-SOCKET_LIBRARIES} )
   target_link_libraries(seuss.elf ${CMAKE_CURRENT_SOURCE_DIR}/src/umm/build/libumm.a)
-  target_link_libraries(seuss.elf ${CMAKE_CURRENT_SOURCE_DIR}/../Umm/tests/net_test/target.binelf )
+  target_link_libraries(seuss.elf ${CMAKE_CURRENT_SOURCE_DIR}/src/umm/tests/net_test/target.binelf )
 	target_link_libraries(seuss.elf PUBLIC -T../src/umm/src/umm.lds )
   add_custom_command(TARGET seuss.elf POST_BUILD
     COMMAND objcopy -O elf32-i386 seuss.elf seuss.elf32 )

@@ -30,6 +30,7 @@ set(HOSTED_SOURCES
 # native-only
 set(BAREMETAL_SOURCES
       ${SOURCES}
+      src/InvocationSession.cc
       src/SeussInvoker.cc
       )
 

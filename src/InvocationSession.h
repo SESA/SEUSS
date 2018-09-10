@@ -14,8 +14,8 @@ namespace seuss {
 
 class InvocationSession : public ebbrt::TcpHandler {
 public:
-  InvocationSession(ebbrt::NetworkManager::TcpPcb pcb, ActivationRecord ar)
-      : ebbrt::TcpHandler(std::move(pcb)), ar_(ar) { Install(); }
+  InvocationSession(ebbrt::NetworkManager::TcpPcb pcb, InvocationStats istats)
+      : ebbrt::TcpHandler(std::move(pcb)), istats_(istats) { Install(); }
 
   /* Default handler for when the TCP connection is aborted */ 
   void Abort();
@@ -41,7 +41,7 @@ public:
   ebbrt::SharedFuture<void> WhenConnected();
   ebbrt::SharedFuture<void> WhenInitialized();
   ebbrt::SharedFuture<std::string> WhenFinished();
-  ActivationRecord GetActivationRecord(){ return ar_;}
+  InvocationStats GetStats(){ return istats_;}
 
 private:
   /* event hooks */
@@ -53,7 +53,7 @@ private:
   /* session members */
   bool is_connected_{false};
   bool is_initialized_{false};
-  ActivationRecord ar_;
+  InvocationStats istats_;
   ebbrt::clock::Wall::time_point command_clock_;
   /* helper methods */
   std::string http_post_request(std::string path, std::string payload);

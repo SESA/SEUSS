@@ -26,10 +26,10 @@ void seuss::SeussChannel::Ping(ebbrt::Messenger::NetworkId nid){
   SendMessage(nid, std::move(buf));
 };
 
-void seuss::SeussChannel::SendReply(ebbrt::Messenger::NetworkId nid, ActivationRecord ar, std::string args) {
+void seuss::SeussChannel::SendReply(ebbrt::Messenger::NetworkId nid, InvocationStats istats, std::string args) {
 #ifdef __ebbrt__ /* Native (EbbRT) */
   if ((size_t)ebbrt::Cpu::GetMine() != io_core) {
-    ebbrt::event_manager->SpawnRemote([=]() { SendReply(nid, ar, args); },
+    ebbrt::event_manager->SpawnRemote([=]() { SendReply(nid, istats, args); },
                                       io_core);
     return;
   }
@@ -41,7 +41,7 @@ void seuss::SeussChannel::SendReply(ebbrt::Messenger::NetworkId nid, ActivationR
   // Complete the message header
   auto &hdr = dp.Get<MsgHeader>();
   hdr.type = MsgType::reply;
-  hdr.record = ar;
+  hdr.record = istats;
   hdr.record.args_size = args.size(); // Is this nescessary? 
   // Copy in msg payload
   hdr.len = args.size();

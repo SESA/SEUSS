@@ -113,10 +113,10 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   // Create a new session this invocation 
   fid_ = fid;
   ebbrt::NetworkManager::TcpPcb pcb;
-  ActivationRecord ac={0}; 
-  ac.transaction_id = tid;
-  ac.function_id = fid;
-  umsesh_ = new InvocationSession(std::move(pcb), ac);
+  InvocationStats istats={0}; 
+  istats.transaction_id = tid;
+  istats.function_id = fid;
+  umsesh_ = new InvocationSession(std::move(pcb), istats);
 
   /* Setup the asyncronous operations on the InvocationSession */
   umsesh_->WhenConnected().Then(
@@ -137,13 +137,11 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   ebbrt::event_manager->SpawnLocal(
       [this] {
         // Start a new TCP connection with the http request
-        // XXX: FIXED IP ADDRESS (NO MULTICORE)!
         size_t my_cpu = ebbrt::Cpu::GetMine();
         std::array<uint8_t, 4> umip = {{169, 254, 1,(uint8_t)my_cpu}};
         umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080);
       },
       /* force async */ true);
-
 
   /* Load up the base snapshot environment */
   auto umi2 = std::make_unique<umm::UmInstance>(base_um_env_);
@@ -168,14 +166,14 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
     auto code = req_vals.second;
     request_map_.erase(tid);
     // Invoke the function 
-    kprintf("CORE %u: Pulling request #%lu from queue (qlen=%d)\n", (size_t)ebbrt::Cpu::GetMine(), tid, request_queue_.size());
+    kprintf("Core %u: Pulling request #%lu from queue (qlen=%d)\n", (size_t)ebbrt::Cpu::GetMine(), tid, request_queue_.size());
     Invoke(tid, 0, args, code);
   }
 }
 
-void seuss::Invoker::Resolve(seuss::ActivationRecord ar, std::string ret) {
+void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {
   seuss_channel->SendReply(
-      ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), ar, ret);
+      ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), istats, ret);
   delete umsesh_;
   umsesh_ = nullptr;
   umm::manager->Halt();

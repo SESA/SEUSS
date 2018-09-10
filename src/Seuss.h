@@ -15,11 +15,11 @@ struct ExecStats {
 };
 
 /** Function activation record */
-struct ActivationRecord {
+struct InvocationStats {
   size_t transaction_id;
   size_t function_id;
   size_t args_size;
-  ExecStats stats;
+  ExecStats exec;
 };
 
 } // end seuss

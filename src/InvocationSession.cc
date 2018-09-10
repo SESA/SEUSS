@@ -41,7 +41,7 @@ void seuss::InvocationSession::Finish(std::string response) {
   ebbrt::event_manager->SpawnLocal(
       [this, response]() { when_finished_.SetValue(response); });
 #endif
-  seuss::invoker->Resolve(ar_, response);
+  seuss::invoker->Resolve(istats_, response);
 }
 
 ebbrt::SharedFuture<void> seuss::InvocationSession::WhenConnected(){
@@ -79,12 +79,12 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
 
   /* Verify if the http request was successful */
   if(http_status != "HTTP/1.1 200 OK"){
-    ar_.stats.status = 1; /* INVOCATION FAILED */
+    istats_.exec.status = 1; /* INVOCATION FAILED */
     Finish(response);
   }
   /* An {"OK":true} response signals a completed INIT */
   if (response == R"({"OK":true})" && !is_initialized_) {
-    ar_.stats.init_time = response_time;
+    istats_.exec.init_time = response_time;
     // Trigger 'WhenInitialized().Then()' logic on a new event context
     ebbrt::event_manager->SpawnLocal(
         [this]() {
@@ -94,8 +94,8 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
   }
   /* Any other response signals a completed RUN */
   else {
-    ar_.stats.run_time = response_time;
-    ar_.stats.status = 0; /* INVOCATION SUCCESSFUL */
+    istats_.exec.run_time = response_time;
+    istats_.exec.status = 0; /* INVOCATION SUCCESSFUL */
     Finish(response);
   }
 }

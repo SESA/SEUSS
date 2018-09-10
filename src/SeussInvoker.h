@@ -39,7 +39,7 @@ public:
   void Invoke(uint64_t tid, size_t fid, const std::string args,
               const std::string code);
   // Resolve invocation request
-  void Resolve(ActivationRecord ar, const std::string ret_args);
+  void Resolve(InvocationStats istats, const std::string ret_args);
 
 private:
   bool is_bootstrapped_{false}; // Have we created a base snapshot

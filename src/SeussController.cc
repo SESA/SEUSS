@@ -96,12 +96,12 @@ seuss::Controller::ScheduleActivation(
   return ret;
 }
 
-void seuss::Controller::ResolveActivation(seuss::ActivationRecord ar, std::string res){
+void seuss::Controller::ResolveActivation(seuss::InvocationStats istats, std::string res){
   std::ostringstream annotations;
   // Capture the ending time
   auto end_time = std::chrono::high_resolution_clock::now();
   // Lookup activation in the table
-  auto tid = ar.transaction_id;
+  auto tid = istats.transaction_id;
   std::lock_guard<std::mutex> guard(m_);
   auto it = record_map_.find(tid);
   assert(it != record_map_.end());
@@ -112,14 +112,14 @@ void seuss::Controller::ResolveActivation(seuss::ActivationRecord ar, std::strin
   size_t total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
                           end_time - start_time)
                           .count();
-  auto wait_time = total_time - ar.stats.run_time - ar.stats.init_time;
+  auto wait_time = total_time - istats.exec.run_time - istats.exec.init_time;
   // annotations (waitTime, initTime)
-  annotations << R"({"key":"waitTime","value":)" << wait_time << R"(},{"key":"initTime","value":)"<< ar.stats.init_time << R"(})";
+  annotations << R"({"key":"waitTime","value":)" << wait_time << R"(},{"key":"initTime","value":)"<< istats.exec.init_time << R"(})";
   cm.response_.annotations_ = annotations.str();
-  cm.response_.duration_ = ar.stats.run_time;
+  cm.response_.duration_ = istats.exec.run_time;
   cm.response_.start_ = 0;
   cm.response_.end_ = 0;
-  cm.response_.status_code_ = ar.stats.status; 
+  cm.response_.status_code_ = istats.exec.status; 
   cm.response_.result_ = res;
   std::get<0>(record_tuple).SetValue(cm);
   record_map_.erase(it);

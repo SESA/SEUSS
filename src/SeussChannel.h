@@ -28,7 +28,7 @@ enum MsgType : uint8_t {
 struct MsgHeader {
   MsgType type;
   size_t len;
-  ActivationRecord record;
+  InvocationStats record;
 };
 
 // TODO(jmcadden): make this a multi-node Ebb
@@ -45,7 +45,7 @@ public:
   void SendRequest(ebbrt::Messenger::NetworkId nid, uint64_t id, size_t fid,
                    std::string code, std::string args);
 
-  void SendReply(ebbrt::Messenger::NetworkId nid, ActivationRecord ac,
+  void SendReply(ebbrt::Messenger::NetworkId nid, InvocationStats istats,
                    std::string args);
 
   void ReceiveMessage(ebbrt::Messenger::NetworkId nid,

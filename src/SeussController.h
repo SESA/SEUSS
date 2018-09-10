@@ -46,7 +46,7 @@ public:
 /* The final stage of a suess activation
   *  The activation result is passed back to OpenWhisk 
   */
-  void ResolveActivation(ActivationRecord ar, std::string res);
+  void ResolveActivation(InvocationStats istats, std::string res);
 
   // Register an Invocation node
   void RegisterNode(ebbrt::Messenger::NetworkId nid);

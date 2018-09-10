@@ -50,17 +50,61 @@ void seuss::Init(){
 
 void seuss::InvocationSession::Connected() {
     // We've established a connection with the instance
+    is_connected_ = true;
     // Trigger 'WhenConnected().Then()' logic on a new event context
-    ebbrt::event_manager->SpawnLocal(
-        [this]() {
-          is_connected_ = true;
-          connected_.SetValue();
-        });
+    ebbrt::event_manager->SpawnLocal([this]() { when_connected_.SetValue(); });
+}
+
+void seuss::InvocationSession::Close() {
+  kprintf_force("InvocationSession closed!\n");
+  is_connected_ = false;
+  // Trigger 'WhenClosed().Then()' logic on a new event context
+  ebbrt::event_manager->SpawnLocal([this]() { when_closed_.SetValue(); });
+}
+
+void seuss::InvocationSession::Abort() {
+  kprintf_force("InvocationSession aborted!\n");
+  is_connected_ = false;
+  // Trigger 'WhenAborted().Then()' logic on a new event context
+  ebbrt::event_manager->SpawnLocal([this]() { when_aborted_.SetValue(); });
+}
+
+void seuss::InvocationSession::Finish(std::string response) {
+  kprintf("InvocationSession finished!\n");
+  // Force disconnect of the TCP connection
+  Pcb().Disconnect();
+#if 0
+  // XXX: Doing the resolve in a new context causes GP/IOC exceptions
+  // Trigger 'WhenFinished().Then()' logic on a new event context
+  ebbrt::event_manager->SpawnLocal(
+      [this, response]() { when_finished_.SetValue(response); });
+#endif
+  seuss::invoker->Resolve(ar_, response);
+}
+
+ebbrt::SharedFuture<void> seuss::InvocationSession::WhenConnected(){
+  return when_connected_.GetFuture().Share();
+}
+
+ebbrt::SharedFuture<void> seuss::InvocationSession::WhenInitialized(){
+  return when_initialized_.GetFuture().Share();
+}
+
+ebbrt::SharedFuture<void> seuss::InvocationSession::WhenAborted(){
+  return when_aborted_.GetFuture().Share();
+}
+
+ebbrt::SharedFuture<void> seuss::InvocationSession::WhenClosed(){
+  return when_closed_.GetFuture().Share();
+}
+
+ebbrt::SharedFuture<std::string> seuss::InvocationSession::WhenFinished(){
+  return when_finished_.GetFuture().Share();
 }
 
 void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
   size_t response_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             ebbrt::clock::Wall::Now() - clock_)
+                             ebbrt::clock::Wall::Now() - command_clock_)
                              .count();
 
   //TODO: support chain and incomplete buffers (i.e., large replies)
@@ -83,7 +127,7 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
     ebbrt::event_manager->SpawnLocal(
         [this]() {
           is_initialized_ = true;
-          initialized_.SetValue();
+          when_initialized_.SetValue();
         });
   }
   /* Any other response signals a completed RUN */
@@ -94,20 +138,6 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
   }
 }
 
-void seuss::InvocationSession::Finish(std::string response) {
-  // Force disconnect of the TCP connection
-  Pcb().Disconnect();
-  seuss::invoker->Resolve(ar_, response);
-}
-
-void seuss::InvocationSession::Close() {
-  kprintf_force("InvocationSession closed!\n");
-}
-
-void seuss::InvocationSession::Abort() {
-  kprintf_force("InvocationSession aborted!\n");
-}
-
 void seuss::InvocationSession::SendHttpRequest(std::string path,
                                                std::string payload) {
   kassert(payload.size() > 0);
@@ -116,16 +146,8 @@ void seuss::InvocationSession::SendHttpRequest(std::string path,
   auto dp = buf->GetMutDataPointer();
   auto str_ptr = reinterpret_cast<char *>(dp.Data());
   msg.copy(str_ptr, msg.size());
-  clock_ = ebbrt::clock::Wall::Now();
+  command_clock_ = ebbrt::clock::Wall::Now();
   Send(std::move(buf));
-}
-
-ebbrt::SharedFuture<void> seuss::InvocationSession::WhenConnected(){
-  return connected_.GetFuture().Share();
-}
-
-ebbrt::SharedFuture<void> seuss::InvocationSession::WhenInitialized(){
-  return initialized_.GetFuture().Share();
 }
 
 std::string seuss::InvocationSession::http_post_request(std::string path,
@@ -134,6 +156,7 @@ std::string seuss::InvocationSession::http_post_request(std::string path,
   std::ostringstream ret;
 
   // construct json payload formatted for OpenWhisk ActonRunner
+  // TODO: avoid locking operation
   msg.erase(std::remove(msg.begin(), msg.end(), '\n'), msg.end());
   payload << "{\"value\": ";
   if (path == "/init") {
@@ -144,6 +167,7 @@ std::string seuss::InvocationSession::http_post_request(std::string path,
 
   // build http message header + body
   auto body = payload.str();
+  // TODO: avoid locking operation
   ret << "POST " << path << " HTTP/1.0\r\n"
       << "Content-Type: application/json\r\n"
       << "Connection: keep-alive\r\n"
@@ -160,6 +184,7 @@ void seuss::Invoker::Bootstrap() {
   kprintf_force("Bootstrapping Invoker on core #%d\n", (size_t)ebbrt::Cpu::GetMine());
 
   std::ostringstream optstream;
+  // TODO: avoid locking operation
   optstream << R"({"cmdline":"bin/node-default /nodejsActionBase/app.js",
  "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.)"
        << (size_t)ebbrt::Cpu::GetMine() << R"(","mask":"16"}})";
@@ -219,16 +244,27 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   // Create a new session this invocation 
   fid_ = fid;
   ebbrt::NetworkManager::TcpPcb pcb;
-  // TODO: Remove arguments from Session constructor and set them via Method call
-  // TODO: Or do it all via promise/futures
   ActivationRecord ac={0}; 
   ac.transaction_id = tid;
   ac.function_id = fid;
-  umsesh_ = new InvocationSession(std::move(pcb), ac, args, code);
+  umsesh_ = new InvocationSession(std::move(pcb), ac);
 
   /* Setup the asyncronous operations on the InvocationSession */
+  umsesh_->WhenConnected().Then(
+      [this, code](auto f) { umsesh_->SendHttpRequest("/init", code); });
 
-  // Setup a connection with the running instance 
+  umsesh_->WhenInitialized().Then(
+      [this, args](auto f) { umsesh_->SendHttpRequest("/run", args); });
+
+#if 0
+  umsesh_->WhenFinished().Then([this](auto fres) {
+    kprintf("OH LOOK AT THAT!\n");
+    std::string response = fres.Get();
+    invoker->Resolve(this->umsesh_->GetActivationRecord(), response);
+  });
+#endif 
+
+  /* Spawn a new event to make a connection the instance */
   ebbrt::event_manager->SpawnLocal(
       [this] {
         // Start a new TCP connection with the http request
@@ -238,12 +274,6 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
         umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080);
       },
       /* force async */ true);
-
-  umsesh_->WhenConnected().Then(
-      [this, code](auto f) { umsesh_->SendHttpRequest("/init", code); });
-
-  umsesh_->WhenInitialized().Then(
-      [this, args](auto f) { umsesh_->SendHttpRequest("/run", args); });
 
 
   /* Load up the base snapshot environment */

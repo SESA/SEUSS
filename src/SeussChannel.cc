@@ -131,10 +131,10 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
     ebbrt::event_manager->SpawnRemote(
         [hdr, args, code]() {
           seuss::invoker->Invoke(hdr.record.transaction_id,
-                                 hdr.record.function_id, args, code);
+                                 123, args, code);
         },
         (count_ % ebbrt::Cpu::Count())); // cycle invocations between cores 
-    count_++;
+    //count_++;
     break;
   case MsgType::reply:
     kabort("Received invocation reply on EbbRT (native)!?\n");

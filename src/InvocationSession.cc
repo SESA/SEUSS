@@ -21,9 +21,9 @@ void seuss::InvocationSession::Close() {
   kprintf_force("InvocationSession closed!\n");
   is_connected_ = false;
   
+    Pcb().Disconnect();
   // Trigger 'WhenClosed().Then()' logic on a new event context
   ebbrt::event_manager->SpawnLocal([this]() {
-    Pcb().Disconnect();
     when_closed_.SetValue();
   });
 }
@@ -38,7 +38,7 @@ void seuss::InvocationSession::Abort() {
 void seuss::InvocationSession::Finish(std::string response) {
   kprintf("InvocationSession finished!\n");
   // Force disconnect of the TCP connection
-  Pcb().Disconnect();
+  //Pcb().Disconnect();
 #if 0
   // XXX: Doing the resolve in a new context causes GP/IOC exceptions
   // Trigger 'WhenFinished().Then()' logic on a new event context
@@ -107,12 +107,17 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
 void seuss::InvocationSession::SendHttpRequest(std::string path,
                                                std::string payload) {
   kassert(payload.size() > 0);
-  std::string msg = http_post_request(path, payload);
+  std::string msg;
+  if( path == "/init")
+    msg = http_post_request(path, payload, true);
+  else
+    msg = http_post_request(path, payload, false);
   auto buf = ebbrt::MakeUniqueIOBuf(msg.size());
   auto dp = buf->GetMutDataPointer();
   auto str_ptr = reinterpret_cast<char *>(dp.Data());
   msg.copy(str_ptr, msg.size());
   command_clock_ = ebbrt::clock::Wall::Now();
+  std::cout << msg << std::endl;
   Send(std::move(buf));
 }
 
@@ -122,7 +127,7 @@ void seuss::InvocationSession::reset_pcb_internal(){
 }
 
 std::string seuss::InvocationSession::http_post_request(std::string path,
-                                                        std::string msg) {
+                                                        std::string msg, bool keep_alive=false) {
   std::ostringstream payload;
   std::ostringstream ret;
 
@@ -140,8 +145,10 @@ std::string seuss::InvocationSession::http_post_request(std::string path,
   auto body = payload.str();
   // TODO: avoid locking operation
   ret << "POST " << path << " HTTP/1.0\r\n"
-      << "Content-Type: application/json\r\n"
-      << "content-length: " << body.size() << "\r\n\r\n"
+      << "Content-Type: application/json\r\n";
+  if (keep_alive)
+    ret << "Connection: keep-alive\r\n";
+  ret << "content-length: " << body.size() << "\r\n\r\n"
       << body;
   return ret.str();
 }

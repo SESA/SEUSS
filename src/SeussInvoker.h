@@ -42,6 +42,9 @@ public:
   void Resolve(InvocationStats istats, const std::string ret_args);
 
 private:
+  bool process_warm_start(size_t fid, std::string code, std::string args);
+  bool process_hot_start(size_t fid,  std::string args);
+
   bool is_bootstrapped_{false}; // Have we created a base snapshot
   bool is_running_{false};      // Have we booted the snapshot
 
@@ -55,8 +58,9 @@ private:
   std::unordered_map<uint64_t, invocation_request> request_map_;
   std::queue<uint64_t> request_queue_;
   std::unordered_map<uint32_t, ebbrt::Promise<void>> promise_map_;
-  // TODO: move sv into a root Ebb?
+
   umm::UmSV base_um_env_;
+  std::unordered_map<size_t, umm::UmSV> um_sv_map_;
 };
 
 constexpr auto invoker = ebbrt::EbbRef<Invoker>(Invoker::global_id);

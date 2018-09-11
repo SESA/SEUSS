@@ -35,6 +35,7 @@ public:
   /* Finished the invocation session, pass reponse to Invoker */ 
   void Finish(std::string Response);
 
+  void reset_pcb_internal();
   /* Asyncronous hooks for event handlers */
   ebbrt::SharedFuture<void> WhenClosed();
   ebbrt::SharedFuture<void> WhenAborted();
@@ -56,8 +57,7 @@ private:
   InvocationStats istats_;
   ebbrt::clock::Wall::time_point command_clock_;
   /* helper methods */
-  std::string http_post_request(std::string path, std::string payload);
-  void reset_pcb_internal();
+  std::string http_post_request(std::string path, std::string payload, bool keep_alive);
 }; // end class InvocationSession
 } // end namespace seuss
 #endif 

@@ -48,22 +48,25 @@ void openwhisk::test() {
   ebbrt::event_manager->Spawn(
       [am]() {
         uint16_t args;
-        const std::string code =
-            R"(function main(args) { return {done:true, arg:args.mykey};})";
+        //const std::string code = R"(function main(args) { ret~~~~~urn {done:true, arg:args.mykey};})"; /* BROKEN JS CODE TEST!!! */
+        const std::string code = R"(function main(args) { return {done:true, arg:args.mykey};})";
+        //const std::string code = R"(function main(args) { var max = 1<<30; for (var line=1; line<max; line++) {} return {done:true, arg:args.mykey};})";
         /* FOR EACH STDIN, INVOKE THE FUNCTION N MANY TIMES */
         while (std::cin >> args) {
           if(!args)
              continue;
           std::cout << "Invoking test function " << args << " time(s)..." << std::endl;
           for(uint16_t i=0; i<args; i++){
-            std::cout << "INV #" << (i+1) << " of " << args << std::endl;
             auto am_tmp = am;
             am_tmp.transid_.id_ = rand(); // OpenWhisk transaction id (unique)
             auto cmf = seuss::controller->ScheduleActivation(am_tmp, code);
             cmf.Then([i](auto f) {
               auto cm = f.Get();
-              std::cout << "INV #" << (i+1) << " returned successfully. " << cm.to_json()
-                        << std::endl;
+              if(cm.response_.status_code_ == 0){
+                std::cout << "#" << (i + 1) << " SUCCESS " << std::endl;
+              }else{
+                std::cout << "#" << (i + 1) << " FAILED " << std::endl;
+              }
             });
           }
           std::this_thread::sleep_for(std::chrono::milliseconds(1000));

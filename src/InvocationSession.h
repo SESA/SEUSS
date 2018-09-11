@@ -57,7 +57,7 @@ private:
   ebbrt::clock::Wall::time_point command_clock_;
   /* helper methods */
   std::string http_post_request(std::string path, std::string payload);
-
+  void reset_pcb_internal();
 }; // end class InvocationSession
 } // end namespace seuss
 #endif 

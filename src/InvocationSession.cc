@@ -20,8 +20,12 @@ void seuss::InvocationSession::Connected() {
 void seuss::InvocationSession::Close() {
   kprintf_force("InvocationSession closed!\n");
   is_connected_ = false;
+  
   // Trigger 'WhenClosed().Then()' logic on a new event context
-  ebbrt::event_manager->SpawnLocal([this]() { when_closed_.SetValue(); });
+  ebbrt::event_manager->SpawnLocal([this]() {
+    Pcb().Disconnect();
+    when_closed_.SetValue();
+  });
 }
 
 void seuss::InvocationSession::Abort() {
@@ -112,6 +116,11 @@ void seuss::InvocationSession::SendHttpRequest(std::string path,
   Send(std::move(buf));
 }
 
+void seuss::InvocationSession::reset_pcb_internal(){
+  ebbrt::NetworkManager::TcpPcb *pcb = (ebbrt::NetworkManager::TcpPcb *) &Pcb();
+  *pcb = ebbrt::NetworkManager::TcpPcb();
+}
+
 std::string seuss::InvocationSession::http_post_request(std::string path,
                                                         std::string msg) {
   std::ostringstream payload;
@@ -132,10 +141,8 @@ std::string seuss::InvocationSession::http_post_request(std::string path,
   // TODO: avoid locking operation
   ret << "POST " << path << " HTTP/1.0\r\n"
       << "Content-Type: application/json\r\n"
-      << "Connection: keep-alive\r\n"
       << "content-length: " << body.size() << "\r\n\r\n"
       << body;
-
   return ret.str();
 }
 

@@ -122,10 +122,26 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   umsesh_->WhenConnected().Then(
       [this, code](auto f) { umsesh_->SendHttpRequest("/init", code); });
 
+  umsesh_->WhenClosed().Then(
+      [this, args](auto f) { kprintf("We're Closed!\n\n"); 
+
+  /* Lets try to reconnect */
+  ebbrt::event_manager->SpawnLocal(
+      [this, args] {
+        // Start a new TCP connection with the http request
+        size_t my_cpu = ebbrt::Cpu::GetMine();
+        std::array<uint8_t, 4> umip = {{169, 254, 1,(uint8_t)my_cpu}};
+        umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080, 49159);
+        umsesh_->WhenConnected().Then(
+            [this, args](auto f) { umsesh_->SendHttpRequest("/run", args); });
+      },
+      /* force async */ true);
+});
+#if 0
   umsesh_->WhenInitialized().Then(
       [this, args](auto f) { umsesh_->SendHttpRequest("/run", args); });
-
-#if 0
+  umsesh_->WhenAborted().Then(
+      [this, args](auto f) { umsesh_->SendHttpRequest("/run", args); });
   umsesh_->WhenFinished().Then([this](auto fres) {
     kprintf("OH LOOK AT THAT!\n");
     std::string response = fres.Get();

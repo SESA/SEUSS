@@ -134,7 +134,7 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
                                  hdr.record.function_id, args, code);
         },
         (count_ % ebbrt::Cpu::Count())); // cycle invocations between cores 
-    count_++;
+    // count_++;
     break;
   case MsgType::reply:
     kabort("Received invocation reply on EbbRT (native)!?\n");

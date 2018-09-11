@@ -46,14 +46,25 @@ void seuss::Init(){
 }
 
 /* class seuss::InvocationSession */
+bool haveSnap = false;
 
 void seuss::InvocationSession::Connected() {
     // We've established a connection with the instance
     set_connected_.SetValue();
     is_connected_ = true;
+
+    if(!haveSnap){
+      haveSnap = true;
+      seuss::invoker->checkpointKludge();
+    } else{
+      umm::manager->SetCheckpoint(NULL);
+    }
+
     // Send code to be initialized 
-    if (!function_code_.empty())
+    if (!function_code_.empty()){
+      kprintf_force(RED "Proxy sending INIT\n" RESET);
       SendHttpRequest("/init", function_code_);
+    }
 }
 
 void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
@@ -91,8 +102,10 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
     // Set init_time for the function
     ar_.stats.init_time = event_time;
     // always RUN right after INIT is complete
-    if(!run_args_.empty())
+    if(!run_args_.empty()){
+      kprintf_force(RED "Proxy sending RUN\n" RESET);
       SendHttpRequest("/run", run_args_);
+    }
   } else {
     // Force disconnect of the TCP connection
     Pcb().Disconnect();
@@ -108,6 +121,19 @@ void seuss::InvocationSession::Close(){
 
 void seuss::InvocationSession::Abort() {
   kprintf_force("InvocationSession aborted!\n");
+  // kprintf_force(YELLOW "Attempting reconnect!\n" RESET);
+
+  // Pcb().Disconnect();
+
+  // ebbrt::NetworkManager::TcpPcb *pcb = (ebbrt::NetworkManager::TcpPcb *) &Pcb();
+  // *pcb = ebbrt::NetworkManager::TcpPcb();
+
+  // Install();
+
+  // ebbrt::event_manager->SpawnLocal([this](){
+  //     size_t my_cpu = ebbrt::Cpu::GetMine();
+  //     std::array<uint8_t, 4> umip = {{169, 254, 1,(uint8_t)my_cpu}};
+  //     Pcb().Connect(ebbrt::Ipv4Address(umip), 8080);}, true);
 }
 
 void seuss::InvocationSession::SendHttpRequest(std::string path, std::string payload) {
@@ -239,17 +265,29 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   ac.function_id = fid;
   umsesh_ = new InvocationSession(std::move(pcb), ac, args, code);
 
-  // Load up the base environment
-  auto umi2 = std::make_unique<umm::UmInstance>(base_um_env_);
-  umm::manager->Load(std::move(umi2));
+  if(!haveSnap){
+    // Load up the base environment
+    kprintf_force(RED "Loading base snapshot\n" RESET);
+    auto umi2 = std::make_unique<umm::UmInstance>(base_um_env_);
+    umm::manager->Load(std::move(umi2));
 
-  // Asynchronously try an setup a connection with the running UMI 
+
+  }else {
+    // Load up the hot environment
+    kprintf_force(RED "Loading hot snapshot\n" RESET);
+    // int db = 1; while(db);
+    // Halt the instance after we've taking the snapshot
+
+    auto umi2 = std::make_unique<umm::UmInstance>(hot_sv_env_);
+    umm::manager->Load(std::move(umi2));
+  }
+  // Asynchronously try an setup a connection with the running UMI
   ebbrt::event_manager->SpawnLocal(
       [this] {
         // Start a new TCP connection with the http request
         // XXX: FIXED IP ADDRESS (NO MULTICORE)!
         size_t my_cpu = ebbrt::Cpu::GetMine();
-        std::array<uint8_t, 4> umip = {{169, 254, 1,(uint8_t)my_cpu}};
+        std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
         umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080);
       },
       /* force async */ true);
@@ -288,4 +326,16 @@ void seuss::Invoker::Resolve(seuss::ActivationRecord ar, std::string ret) {
   umsesh_ = nullptr;
   umm::manager->Halt();
 }
+
+void seuss::Invoker::checkpointKludge() {
+    kprintf_force(YELLOW "Setting checkpoint for hot start, getting future!!!\n" RESET);
+
+    ebbrt::Future<umm::UmSV> hot_sv_f = umm::manager->SetCheckpoint(umm::ElfLoader::GetSymbolAddress("uv_uptime"));
+
+    hot_sv_f.Then([this](ebbrt::Future<umm::UmSV> f) {
+        // Capture snapshot 
+        kprintf_force(YELLOW "Holy shit, got the snap.\n" RESET);
+        hot_sv_env_ = f.Get();
+      }); // End snap_f.Then(...)
+  }
 

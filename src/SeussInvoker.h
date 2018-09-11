@@ -73,6 +73,7 @@ public:
   // Resolve invocation request
   void Resolve(ActivationRecord ar, const std::string ret_args);
 
+  void checkpointKludge();
 private:
   bool is_bootstrapped_{false}; // Have we created a base snapshot
   bool is_running_{false};      // Have we booted the snapshot
@@ -89,6 +90,8 @@ private:
   std::unordered_map<uint32_t, ebbrt::Promise<void>> promise_map_;
   // TODO: move sv into a root Ebb?
   umm::UmSV base_um_env_;
+  umm::UmSV hot_sv_env_;
+  // umm::UmSV hot_sv_;
 };
 
 constexpr auto invoker = ebbrt::EbbRef<Invoker>(Invoker::global_id);

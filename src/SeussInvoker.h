@@ -60,12 +60,17 @@ private:
 
   // TODO: FIXME: XXX: locking...
   std::mutex m_;
+  // Arg code pair
   typedef std::pair<std::string, std::string> invocation_request;
+  // map tid to (arg, code) pairs.
   std::unordered_map<uint64_t, invocation_request> request_map_;
+  // Queue requests by tid
   std::queue<uint64_t> request_queue_;
-  std::unordered_map<uint32_t, ebbrt::Promise<void>> promise_map_;
+
+  // std::unordered_map<uint32_t, ebbrt::Promise<void>> promise_map_;
 
   umm::UmSV base_um_env_;
+  // Lookup sv by fid.
   std::unordered_map<size_t, umm::UmSV> um_sv_map_;
 };
 

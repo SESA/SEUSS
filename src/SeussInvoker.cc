@@ -112,6 +112,7 @@ bool seuss::Invoker::process_warm_start(size_t fid, std::string code,
   // When you have the sv, cache it for future use.
   hot_sv_f.Then([this, fid](ebbrt::Future<umm::UmSV> f) {
     // Capture snapshot
+      kprintf_force(YELLOW "Inserting fn %d\n" RESET, fid);
     bool inserted;
     std::tie(std::ignore, inserted) =
         um_sv_map_.emplace(fid, std::move(f.Get()));
@@ -130,6 +131,7 @@ bool seuss::Invoker::process_warm_start(size_t fid, std::string code,
 
   umsesh_->WhenInitialized().Then(
       [this, args](auto f) {
+        // kprintf_force(YELLOW "Refusing to Run\n" RESET);
         kprintf_force(YELLOW "Running\n" RESET);
         umsesh_->SendHttpRequest("/run", args);
       });
@@ -139,6 +141,7 @@ bool seuss::Invoker::process_warm_start(size_t fid, std::string code,
     kprintf_force(YELLOW "Connection Closed...\n" RESET);
     ebbrt::event_manager->SpawnLocal(
         [this] {
+          kprintf_force(YELLOW "calling halt...\n" RESET);
           umm::manager->Halt(); /* Return to back to init_code_and_snap */
         },
         /* force async */ true);
@@ -156,6 +159,7 @@ bool seuss::Invoker::process_warm_start(size_t fid, std::string code,
       /* force async */ true);
 
   /* Load up the base snapshot environment */
+  kprintf_force(YELLOW "Loading up base env\n" RESET);
   auto umi2 = std::make_unique<umm::UmInstance>(base_um_env_);
   umm::manager->Load(std::move(umi2));
   /* Boot the snapshot */
@@ -165,6 +169,7 @@ bool seuss::Invoker::process_warm_start(size_t fid, std::string code,
   /* RETURN HERE AFTER HALT */
   // XXX: memory leak
   umsesh_ = nullptr;
+  kprintf_force(YELLOW "Unload slot!\n" RESET);
   umm::manager->Unload();
   is_running_ = false;
   kprintf_force(YELLOW "Finished WARM start \n" RESET);
@@ -176,6 +181,7 @@ bool seuss::Invoker::process_hot_start(size_t fid, std::string args) {
   kprintf_force(RED "Processing HOT start \n" RESET);
 
   /* Check snapshot cache for function-specific snapshot */
+  kprintf_force(RED "Searching for fn %d\n" RESET, fid);
   auto cache_result = um_sv_map_.find(fid);
   assert(cache_result != um_sv_map_.end());
 
@@ -291,15 +297,25 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   if (cache_result == um_sv_map_.end()) {
     /* CACHE MISS */
     process_warm_start(fid, code, args);
-  } else {
+    kprintf_force(MAGENTA "Done processing warm start\n" RESET);
+    // XXX: Note this used to return, but now it doesn't.
+  }
+  else{
     process_hot_start(fid, args);
   }
 
-  // If there's a queued request, let's deploy it
-  // TODO: control this in an outter loop? Weird recursion inside.
-  if (!request_queue_.empty()) {
+  // Make sure any pending shit from warm start runs.
+  // ebbrt::event_manager->SpawnLocal(
+  //     [this, fid, args]() {
+  //       kprintf_force(MAGENTA "Invoke hot start!\n" RESET);
+        // process_hot_start(fid, args);
+
+        // If there's a queued request, let's deploy it
+        // TODO: control this in an outter loop? Weird recursion inside.
+  if (!request_queue_.empty())
     deployQueuedRequest();
-  }
+      // },
+      // /* force async */ true);
 }
 
 void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {

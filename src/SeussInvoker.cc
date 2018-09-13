@@ -16,6 +16,7 @@
 #include "SeussInvoker.h"
 #include "SeussChannel.h"
 
+#include "InvocationSession.h"
 #include "umm/src/Umm.h"
 
 #define kprintf ebbrt::kprintf
@@ -87,110 +88,93 @@ void seuss::Invoker::Bootstrap() {
   return;
 }
 
-bool seuss::Invoker::process_warm_start(size_t fid, std::string code, std::string args){
-
-    kprintf_force(YELLOW "Processing WARM start \n" RESET);
-
-    ebbrt::Future<umm::UmSV> hot_sv_f = umm::manager->SetCheckpoint(
-        umm::ElfLoader::GetSymbolAddress("uv_uptime"));
-
-    hot_sv_f.Then([this, fid](ebbrt::Future<umm::UmSV> f) {
-      // Capture snapshot
-      bool inserted;
-      std::tie(std::ignore, inserted) =
-          um_sv_map_.emplace(fid, std::move(f.Get()));
-      // Assert there was no collision on the key
-      assert(inserted);
-      kprintf_force(YELLOW "Cached initialized SV for future HOT starts.\n" RESET);
-    }); // End hot_sv_f.Then(...)
-
-    /* Setup the asyncronous operations on the InvocationSession */
-    umsesh_->WhenConnected().Then(
-        [this, code](auto f) { umsesh_->SendHttpRequest("/init", code); });
-
-    umsesh_->WhenInitialized().Then(
-        [this, args](auto f) { umsesh_->SendHttpRequest("/run", args); });
-
-    umsesh_->WhenClosed().Then([this](auto f) {
-      kprintf_force(GREEN "Connection Closed...\n" RESET);
-      ebbrt::event_manager->SpawnLocal(
-          [this] {
-            umm::manager->Halt(); /* Return to back to init_code_and_snap */
-          },
-          /* force async */ true);
-    });
-
-    /* Spawn a new event to make a connection with the instance */
-    ebbrt::event_manager->SpawnLocal(
-        [this] {
-          // Start a new TCP connection with the http request
-          size_t my_cpu = ebbrt::Cpu::GetMine();
-          std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
-          umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080, 49159);
-        },
-        /* force async */ true);
-
-    /* Load up the base snapshot environment */
-    auto umi2 = std::make_unique<umm::UmInstance>(base_um_env_);
-    umm::manager->Load(std::move(umi2));
-    /* Boot the snapshot */
-    is_running_ = true;
-    umm::manager->runSV(); // blocks until umm::manager->Halt() is called
-
-    /* RETURN HERE AFTER HALT */
-    // XXX: memory leak
-    umsesh_ = nullptr;
-    umm::manager->Unload();
-    is_running_ = false;
-    kprintf_force(YELLOW "Finished WARM start \n" RESET);
-    return true;
+void seuss::Invoker::queueInvocation(uint64_t tid, const std::string args,
+                                     const std::string code) {
+   // Core is busy, queue up this invocation request
+   auto record = std::make_pair(args, code);
+   bool inserted;
+   // insert records into the hash tables
+   std::tie(std::ignore, inserted) =
+     request_map_.emplace(tid, std::move(record));
+   // Assert there was no collision on the key
+   assert(inserted);
+   request_queue_.push(tid);
 }
 
-void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
-                            const std::string code) {
-  kassert(is_bootstrapped_);
+bool seuss::Invoker::process_warm_start(size_t fid, std::string code,
+                                        std::string args) {
 
-  kprintf("Core %d: Got invocation #%d for function #%u\n",
-          (size_t)ebbrt::Cpu::GetMine(), tid, fid);
+  kprintf_force(YELLOW "Processing WARM start \n" RESET);
 
-  /* Queue the invocation if the core if busy */
-  if (is_running_) {
-    // Core is busy, queue up this invocation request
-    auto record = std::make_pair(args, code);
+  ebbrt::Future<umm::UmSV> hot_sv_f = umm::manager->SetCheckpoint(
+      umm::ElfLoader::GetSymbolAddress("uv_uptime"));
+
+  // When you have the sv, cache it for future use.
+  hot_sv_f.Then([this, fid](ebbrt::Future<umm::UmSV> f) {
+    // Capture snapshot
     bool inserted;
-    // insert records into the hash tables
     std::tie(std::ignore, inserted) =
-        request_map_.emplace(tid, std::move(record));
+        um_sv_map_.emplace(fid, std::move(f.Get()));
     // Assert there was no collision on the key
     assert(inserted);
-    request_queue_.push(tid);
-    return;
-  }
+    kprintf_force(YELLOW
+                  "Cached initialized SV for future HOT starts.\n" RESET);
+  }); // End hot_sv_f.Then(...)
 
-  // We assume the core does NOT have a running UM instance
-  // TODO: verify that umm::manager->Status() == empty
-  kassert(!umsesh_);
-  kprintf("Core %d: Processing #%d for function #%u\n",
-          (size_t)ebbrt::Cpu::GetMine(), tid, fid);
-  // Create a new session this invocation
-  fid_ = fid;
-  ebbrt::NetworkManager::TcpPcb pcb;
-  InvocationStats istats = {0};
-  istats.transaction_id = tid;
-  istats.function_id = fid;
-  umsesh_ = new InvocationSession(std::move(pcb), istats);
+  /* Setup the asyncronous operations on the InvocationSession */
+  umsesh_->WhenConnected().Then(
+      [this, code](auto f) {
+        kprintf_force(YELLOW "Connected, sending init\n" RESET);
+        umsesh_->SendHttpRequest("/init", code);
+      });
 
-  /* Check for a snapshot cache MISS */
-  {
-    auto cache_result = um_sv_map_.find(fid);
-    if (cache_result == um_sv_map_.end()) {
-      /* CACHE MISS */
-      process_warm_start(fid, code, args);
-      return; 
-    } // end CACHE MISS
-  }
+  umsesh_->WhenInitialized().Then(
+      [this, args](auto f) {
+        kprintf_force(YELLOW "Running\n" RESET);
+        umsesh_->SendHttpRequest("/run", args);
+      });
 
-    kprintf_force(RED "Processing HOT start \n" RESET);
+  // Halt when closed
+  umsesh_->WhenClosed().Then([this](auto f) {
+    kprintf_force(YELLOW "Connection Closed...\n" RESET);
+    ebbrt::event_manager->SpawnLocal(
+        [this] {
+          umm::manager->Halt(); /* Return to back to init_code_and_snap */
+        },
+        /* force async */ true);
+  });
+
+  /* Spawn a new event to make a connection with the instance */
+  ebbrt::event_manager->SpawnLocal(
+      [this] {
+        // Start a new TCP connection with the http request
+        kprintf_force(YELLOW "Trying to connect \n" RESET);
+        size_t my_cpu = ebbrt::Cpu::GetMine();
+        std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
+        umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080, 49159);
+      },
+      /* force async */ true);
+
+  /* Load up the base snapshot environment */
+  auto umi2 = std::make_unique<umm::UmInstance>(base_um_env_);
+  umm::manager->Load(std::move(umi2));
+  /* Boot the snapshot */
+  is_running_ = true;
+  umm::manager->runSV(); // blocks until umm::manager->Halt() is called
+
+  /* RETURN HERE AFTER HALT */
+  // XXX: memory leak
+  umsesh_ = nullptr;
+  umm::manager->Unload();
+  is_running_ = false;
+  kprintf_force(YELLOW "Finished WARM start \n" RESET);
+  return true;
+}
+
+bool seuss::Invoker::process_hot_start(size_t fid, std::string args) {
+
+  kprintf_force(RED "Processing HOT start \n" RESET);
+
   /* Check snapshot cache for function-specific snapshot */
   auto cache_result = um_sv_map_.find(fid);
   assert(cache_result != um_sv_map_.end());
@@ -201,16 +185,17 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   /* Spawn a new event to make a connection with the instance */
   ebbrt::event_manager->SpawnLocal(
       [this] {
-      // Start a new TCP connection with the http request
-      size_t my_cpu = ebbrt::Cpu::GetMine();
-      std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
-      umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080);
+        // Start a new TCP connection with the http request
+        size_t my_cpu = ebbrt::Cpu::GetMine();
+        std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
+        umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080);
       },
       /* force async */ true);
 
   umsesh_->WhenConnected().Then(
       [this, args](auto f) { umsesh_->SendHttpRequest("/run", args); });
 
+  // Halt when closed
   umsesh_->WhenClosed().Then([this](auto f) {
     kprintf_force(GREEN "Connection Closed...\n" RESET);
     ebbrt::event_manager->SpawnLocal(
@@ -224,37 +209,102 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   umm::manager->Load(std::move(umi2));
   /* Boot the snapshot */
   is_running_ = true;
-  umm::manager->runSV(); // blocks until umm::manager->Halt() is called 
+  umm::manager->runSV(); // blocks until umm::manager->Halt() is called
   /* After instance is halted */
   /* RETURN HERE AFTER HALT */
   // XXX: memory leak
   umsesh_ = nullptr;
   umm::manager->Unload();
   is_running_ = false;
-    kprintf_force(RED "Finished HOT start \n" RESET);
+  kprintf_force(RED "Finished HOT start \n" RESET);
+  return true;
+}
+
+void seuss::Invoker::deployQueuedRequest(){
+  auto tid = request_queue_.front();
+  request_queue_.pop();
+  auto req = request_map_.find(tid);
+  // TODO: fail gracefully, drop request
+  assert(req != request_map_.end());
+  auto req_vals = req->second;
+  auto args = req_vals.first;
+  auto code = req_vals.second;
+  request_map_.erase(tid);
+  // Invoke the function
+  kprintf("Core %u: Pulling request #%lu from queue (qlen=%d)\n",
+          (size_t)ebbrt::Cpu::GetMine(), tid, request_queue_.size());
+  // TODO: Weird recursion, why not drive from outside?
+  Invoke(tid, 0, args, code);
+}
+
+seuss::InvocationSession* seuss::Invoker::createNewSession(uint64_t tid, size_t fid) {
+  fid_ = fid;
+  // NOTE: old way of stack allocating pcb and istats.
+  // ebbrt::NetworkManager::TcpPcb pcb;
+  // InvocationStats istats = {0};
+
+  auto pcb = new ebbrt::NetworkManager::TcpPcb;
+  auto isp = new InvocationStats;
+
+  *isp = {0};
+  (*isp).transaction_id = tid;
+  (*isp).function_id = fid;
+  // TODO: leak
+  return new InvocationSession(std::move(*pcb), *isp);
+}
+
+void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
+                            const std::string code) {
+  kassert(is_bootstrapped_);
+
+  kprintf("Core %d: Got invocation #%d for function #%u\n",
+          (size_t)ebbrt::Cpu::GetMine(), tid, fid);
+
+  /* Queue the invocation if the core if busy */
+  if (is_running_) {
+    queueInvocation(tid, args, code);
+    return;
+  }
+
+  // We assume the core does NOT have a running UM instance
+  // TODO: verify that umm::manager->Status() == empty
+  kassert(!umsesh_);
+  kprintf("Core %d: Processing #%d for function #%u\n",
+          (size_t)ebbrt::Cpu::GetMine(), tid, fid);
+
+  // Create a new session this invocation
+  // TODO: is stack allocated what we want?
+  // {
+  //   fid_ = fid;
+  //   ebbrt::NetworkManager::TcpPcb pcb;
+  //   InvocationStats istats = {0};
+  //   istats.transaction_id = tid;
+  //   istats.function_id = fid;
+  //   umsesh_ = new InvocationSession(std::move(pcb), istats);
+  // }
+
+  // TODO: this in each start instead of here?
+  umsesh_ = createNewSession(tid, fid);
+
+  /* Check for a snapshot cache MISS */
+  auto cache_result = um_sv_map_.find(fid);
+  if (cache_result == um_sv_map_.end()) {
+    /* CACHE MISS */
+    process_warm_start(fid, code, args);
+  } else {
+    process_hot_start(fid, args);
+  }
 
   // If there's a queued request, let's deploy it
-  if(!request_queue_.empty()){
-      auto tid = request_queue_.front();
-      request_queue_.pop();
-      auto req = request_map_.find(tid);
-      // TODO: fail gracefully, drop request
-      assert(req != request_map_.end());
-      auto req_vals = req->second;
-      auto args = req_vals.first;
-      auto code = req_vals.second;
-      request_map_.erase(tid);
-      // Invoke the function
-      kprintf("Core %u: Pulling request #%lu from queue (qlen=%d)\n",
-              (size_t)ebbrt::Cpu::GetMine(), tid, request_queue_.size());
-
-      Invoke(tid, 0, args, code);
+  // TODO: control this in an outter loop? Weird recursion inside.
+  if (!request_queue_.empty()) {
+    deployQueuedRequest();
   }
-  }
+}
 
-  void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {
-    seuss_channel->SendReply(
-        ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), istats, ret);
+void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {
+  seuss_channel->SendReply(
+      ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), istats, ret);
 #if 0
     delete umsesh_;
     umsesh_ = nullptr;

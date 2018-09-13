@@ -44,6 +44,12 @@ public:
 private:
   bool process_warm_start(size_t fid, std::string code, std::string args);
   bool process_hot_start(size_t fid,  std::string args);
+  void queueInvocation(uint64_t tid, const std::string args,
+                                       const std::string code);
+  void deployQueuedRequest();
+  InvocationSession* createNewSession(uint64_t tid, size_t fid);
+
+
 
   bool is_bootstrapped_{false}; // Have we created a base snapshot
   bool is_running_{false};      // Have we booted the snapshot

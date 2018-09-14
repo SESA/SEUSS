@@ -109,7 +109,7 @@ void seuss::InvocationSession::SendHttpRequest(std::string path,
   kassert(payload.size() > 0);
   std::string msg;
   if( path == "/init")
-    msg = http_post_request(path, payload, true);
+    msg = http_post_request(path, payload, false);
   else
     msg = http_post_request(path, payload, false);
   auto buf = ebbrt::MakeUniqueIOBuf(msg.size());

@@ -42,8 +42,8 @@ public:
   void Resolve(InvocationStats istats, const std::string ret_args);
 
 private:
-  bool process_warm_start(size_t fid, std::string code, std::string args);
-  bool process_hot_start(size_t fid,  std::string args);
+  bool process_warm_start(size_t fid, uint64_t tid, std::string code, std::string args);
+  bool process_hot_start(size_t fid, uint64_t tid, std::string args);
   void queueInvocation(uint64_t tid, const std::string args,
                                        const std::string code);
   void deployQueuedRequest();

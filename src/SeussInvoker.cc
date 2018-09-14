@@ -101,10 +101,13 @@ void seuss::Invoker::queueInvocation(uint64_t tid, const std::string args,
    request_queue_.push(tid);
 }
 
-bool seuss::Invoker::process_warm_start(size_t fid, std::string code,
+bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string code,
                                         std::string args) {
 
   kprintf_force(YELLOW "Processing WARM start \n" RESET);
+
+  // TODO: this in each start instead of here?
+  umsesh_ = createNewSession(tid, fid);
 
   ebbrt::Future<umm::UmSV> hot_sv_f = umm::manager->SetCheckpoint(
       umm::ElfLoader::GetSymbolAddress("uv_uptime"));
@@ -131,9 +134,7 @@ bool seuss::Invoker::process_warm_start(size_t fid, std::string code,
 
   umsesh_->WhenInitialized().Then(
       [this, args](auto f) {
-        // kprintf_force(YELLOW "Refusing to Run\n" RESET);
-        kprintf_force(YELLOW "Running\n" RESET);
-        umsesh_->SendHttpRequest("/run", args);
+        kprintf_force(YELLOW "Refusing to Run\n" RESET);
       });
 
   // Halt when closed
@@ -176,9 +177,12 @@ bool seuss::Invoker::process_warm_start(size_t fid, std::string code,
   return true;
 }
 
-bool seuss::Invoker::process_hot_start(size_t fid, std::string args) {
+bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string args) {
 
   kprintf_force(RED "Processing HOT start \n" RESET);
+
+  // TODO: this in each start instead of here?
+  umsesh_ = createNewSession(tid, fid);
 
   /* Check snapshot cache for function-specific snapshot */
   kprintf_force(RED "Searching for fn %d\n" RESET, fid);
@@ -191,6 +195,7 @@ bool seuss::Invoker::process_hot_start(size_t fid, std::string args) {
   /* Spawn a new event to make a connection with the instance */
   ebbrt::event_manager->SpawnLocal(
       [this] {
+        kprintf_force(GREEN "Attempting to connect ...\n" RESET);
         // Start a new TCP connection with the http request
         size_t my_cpu = ebbrt::Cpu::GetMine();
         std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
@@ -199,7 +204,9 @@ bool seuss::Invoker::process_hot_start(size_t fid, std::string args) {
       /* force async */ true);
 
   umsesh_->WhenConnected().Then(
-      [this, args](auto f) { umsesh_->SendHttpRequest("/run", args); });
+      [this, args](auto f) {
+        kprintf_force(GREEN "Connection open, sending run...\n" RESET);
+        umsesh_->SendHttpRequest("/run", args); });
 
   // Halt when closed
   umsesh_->WhenClosed().Then([this](auto f) {
@@ -289,20 +296,16 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   //   umsesh_ = new InvocationSession(std::move(pcb), istats);
   // }
 
-  // TODO: this in each start instead of here?
-  umsesh_ = createNewSession(tid, fid);
 
   /* Check for a snapshot cache MISS */
   auto cache_result = um_sv_map_.find(fid);
   if (cache_result == um_sv_map_.end()) {
     /* CACHE MISS */
-    process_warm_start(fid, code, args);
+    process_warm_start(fid, tid, code, args);
     kprintf_force(MAGENTA "Done processing warm start\n" RESET);
     // XXX: Note this used to return, but now it doesn't.
   }
-  else{
-    process_hot_start(fid, args);
-  }
+  process_hot_start(fid, tid, args);
 
   // Make sure any pending shit from warm start runs.
   // ebbrt::event_manager->SpawnLocal(
@@ -314,8 +317,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
         // TODO: control this in an outter loop? Weird recursion inside.
   if (!request_queue_.empty())
     deployQueuedRequest();
-      // },
-      // /* force async */ true);
+      // }, /* force async */ true);
 }
 
 void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {

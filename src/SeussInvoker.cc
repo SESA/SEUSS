@@ -44,7 +44,7 @@ void seuss::Init(){
         i);
     f.Block();
   }
-  kprintf_force("\n Finished initialization of all Seuss Invoker cores \n");
+  kprintf_force(GREEN "\nFinished initialization of all Seuss invoker cores \n" RESET);
 }
 
 /* class suess::Invoker */
@@ -123,7 +123,7 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
         um_sv_map_.emplace(fid, std::move(f.Get()));
     // Assert there was no collision on the key
     assert(inserted);
-      kprintf_force(GREEN "Function #%d snapshot cached \n" RESET, fid);
+      kprintf_force(YELLOW "Snapshot created for fid #%d\n" RESET, fid);
   }); // End hot_sv_f.Then(...)
 
   /* Setup the asyncronous operations on the InvocationSession */
@@ -135,7 +135,7 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
 
   umsesh_->WhenInitialized().Then(
       [this, args](auto f) {
-        kprintf_force(YELLOW "Refusing to Run\n" RESET);
+        kprintf(YELLOW "Finished function init\n" RESET);
       });
 
   // Halt when closed
@@ -189,7 +189,7 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   auto cache_result = um_sv_map_.find(fid);
   assert(cache_result != um_sv_map_.end());
 
-  kprintf("Core %d: Invocation cache HIT for function #%d\n",
+  kprintf("invoker_core %d: Invocation cache HIT for function #%d\n",
           (size_t)ebbrt::Cpu::GetMine(), fid);
 
   /* Spawn a new event to make a connection with the instance */
@@ -229,7 +229,6 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   umsesh_ = nullptr;
   umm::manager->Unload();
   is_running_ = false;
-  kprintf(RED "Finished HOT start \n" RESET);
   return true;
 }
 
@@ -271,7 +270,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
                             const std::string code) {
   kassert(is_bootstrapped_);
 
-  kprintf("Core %d: Got invocation #%d for function #%u\n",
+  kprintf_force("invoker_core_%d received invocation: (%d, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
   /* Queue the invocation if the core if busy */
@@ -283,7 +282,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   // We assume the core does NOT have a running UM instance
   // TODO: verify that umm::manager->Status() == empty
   kassert(!umsesh_);
-  kprintf("Core %d: Processing #%d for function #%u\n",
+  kprintf_force("invoker_core_%d starting invocation: (%d, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
   // Create a new session this invocation
@@ -303,11 +302,10 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   if (cache_result == um_sv_map_.end()) {
     /* CACHE MISS */
     process_warm_start(fid, tid, code, args);
-    kprintf_force(MAGENTA "Done processing warm start\n" RESET);
-    // XXX: Note this used to return, but now it doesn't.
   }
   process_hot_start(fid, tid, args);
-
+  kprintf_force("invoker_core_%d finished invocation: (%d, %u)\n",
+          (size_t)ebbrt::Cpu::GetMine(), tid, fid);
   // Make sure any pending shit from warm start runs.
   // ebbrt::event_manager->SpawnLocal(
   //     [this, fid, args]() {
@@ -324,10 +322,5 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
 void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {
   seuss_channel->SendReply(
       ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), istats, ret);
-#if 0
-    delete umsesh_;
-    umsesh_ = nullptr;
-    umm::manager->Halt();
-#endif
   }
 

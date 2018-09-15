@@ -2,6 +2,7 @@
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
+#include <iostream>
 
 #include "SeussInvoker.h"
 
@@ -18,7 +19,7 @@ void seuss::InvocationSession::Connected() {
 }
 
 void seuss::InvocationSession::Close() {
-  kprintf_force("InvocationSession closed!\n");
+  kprintf("InvocationSession closed!\n");
   is_connected_ = false;
   
     Pcb().Disconnect();
@@ -38,13 +39,6 @@ void seuss::InvocationSession::Abort() {
 void seuss::InvocationSession::Finish(std::string response) {
   kprintf("InvocationSession finished!\n");
   // Force disconnect of the TCP connection
-  //Pcb().Disconnect();
-#if 0
-  // XXX: Doing the resolve in a new context causes GP/IOC exceptions
-  // Trigger 'WhenFinished().Then()' logic on a new event context
-  ebbrt::event_manager->SpawnLocal(
-      [this, response]() { when_finished_.SetValue(response); });
-#endif
   seuss::invoker->Resolve(istats_, response);
 }
 
@@ -117,7 +111,9 @@ void seuss::InvocationSession::SendHttpRequest(std::string path,
   auto str_ptr = reinterpret_cast<char *>(dp.Data());
   msg.copy(str_ptr, msg.size());
   command_clock_ = ebbrt::clock::Wall::Now();
+#ifndef NDEBUG /// DEBUG OUTPUT
   std::cout << msg << std::endl;
+#endif
   Send(std::move(buf));
 }
 

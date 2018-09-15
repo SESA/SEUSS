@@ -49,8 +49,8 @@ void openwhisk::test() {
       [am]() {
         uint16_t args;
         //const std::string code = R"(function main(args) { ret~~~~~urn {done:true, arg:args.mykey};})"; /* BROKEN JS CODE TEST!!! */
-        const std::string code = R"(function main(args) { return {done:true, arg:args.mykey};})";
-        //const std::string code = R"(function main(args) { var max = 1<<30; for (var line=1; line<max; line++) {} return {done:true, arg:args.mykey};})";
+        //const std::string code = R"(function main(args) { return {done:true, arg:args.mykey};})";
+        const std::string code = R"(function main(args) { var max = 1<<26; for (var line=1; line<max; line++) {} return {done:true, arg:args.mykey};})";
         /* FOR EACH STDIN, INVOKE THE FUNCTION N MANY TIMES */
         while (std::cin >> args) {
           if(!args)
@@ -63,7 +63,7 @@ void openwhisk::test() {
             cmf.Then([i](auto f) {
               auto cm = f.Get();
               if(cm.response_.status_code_ == 0){
-                std::cout << "#" << (i + 1) << " SUCCESS " << std::endl;
+                std::cout << "#" << (i + 1) << " SUCCESS " << cm.response_.annotations_ << ", duration: " << cm.response_.duration_ << std::endl;
               }else{
                 std::cout << "#" << (i + 1) << " FAILED " << std::endl;
               }

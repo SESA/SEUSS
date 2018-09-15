@@ -57,6 +57,7 @@ private:
   // Session specific state 
   size_t fid_{0};
   InvocationSession *umsesh_{nullptr};
+  uint16_t base_port_;
 
   // TODO: FIXME: XXX: locking...
   std::mutex m_;

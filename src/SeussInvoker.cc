@@ -53,6 +53,9 @@ void seuss::Invoker::Bootstrap() {
   kassert(!is_bootstrapped_);
   kprintf_force("Bootstrapping Invoker on core #%d\n", (size_t)ebbrt::Cpu::GetMine());
 
+  // Port naming kludge
+  base_port_ = 49160 + (size_t)ebbrt::Cpu::GetMine(); 
+
   std::ostringstream optstream;
   // TODO: avoid locking operation
   optstream << R"({"cmdline":"bin/node-default /nodejsActionBase/app.js",
@@ -104,7 +107,7 @@ void seuss::Invoker::queueInvocation(uint64_t tid, const std::string args,
 bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string code,
                                         std::string args) {
 
-  kprintf_force(YELLOW "Processing WARM start \n" RESET);
+  kprintf(YELLOW "Processing WARM start \n" RESET);
 
   // TODO: this in each start instead of here?
   umsesh_ = createNewSession(tid, fid);
@@ -115,20 +118,18 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
   // When you have the sv, cache it for future use.
   hot_sv_f.Then([this, fid](ebbrt::Future<umm::UmSV> f) {
     // Capture snapshot
-      kprintf_force(YELLOW "Inserting fn %d\n" RESET, fid);
     bool inserted;
     std::tie(std::ignore, inserted) =
         um_sv_map_.emplace(fid, std::move(f.Get()));
     // Assert there was no collision on the key
     assert(inserted);
-    kprintf_force(YELLOW
-                  "Cached initialized SV for future HOT starts.\n" RESET);
+      kprintf_force(GREEN "Function #%d snapshot cached \n" RESET, fid);
   }); // End hot_sv_f.Then(...)
 
   /* Setup the asyncronous operations on the InvocationSession */
   umsesh_->WhenConnected().Then(
       [this, code](auto f) {
-        kprintf_force(YELLOW "Connected, sending init\n" RESET);
+        kprintf(YELLOW "Connected, sending init\n" RESET);
         umsesh_->SendHttpRequest("/init", code);
       });
 
@@ -139,10 +140,9 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
 
   // Halt when closed
   umsesh_->WhenClosed().Then([this](auto f) {
-    kprintf_force(YELLOW "Connection Closed...\n" RESET);
+    kprintf(YELLOW "Connection Closed...\n" RESET);
     ebbrt::event_manager->SpawnLocal(
         [this] {
-          kprintf_force(YELLOW "calling halt...\n" RESET);
           umm::manager->Halt(); /* Return to back to init_code_and_snap */
         },
         /* force async */ true);
@@ -152,15 +152,16 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
   ebbrt::event_manager->SpawnLocal(
       [this] {
         // Start a new TCP connection with the http request
-        kprintf_force(YELLOW "Trying to connect \n" RESET);
+        kprintf(YELLOW "Warm start connect \n" RESET);
         size_t my_cpu = ebbrt::Cpu::GetMine();
         std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
-        umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080, 49159);
+        
+        umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080, base_port_+=ebbrt::Cpu::Count());
       },
       /* force async */ true);
 
   /* Load up the base snapshot environment */
-  kprintf_force(YELLOW "Loading up base env\n" RESET);
+  kprintf(YELLOW "Loading up base env\n" RESET);
   auto umi2 = std::make_unique<umm::UmInstance>(base_um_env_);
   umm::manager->Load(std::move(umi2));
   /* Boot the snapshot */
@@ -170,22 +171,21 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
   /* RETURN HERE AFTER HALT */
   // XXX: memory leak
   umsesh_ = nullptr;
-  kprintf_force(YELLOW "Unload slot!\n" RESET);
   umm::manager->Unload();
   is_running_ = false;
-  kprintf_force(YELLOW "Finished WARM start \n" RESET);
+  kprintf(YELLOW "Finished WARM start \n" RESET);
   return true;
 }
 
 bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string args) {
 
-  kprintf_force(RED "Processing HOT start \n" RESET);
+  kprintf(RED "Processing HOT start \n" RESET);
 
   // TODO: this in each start instead of here?
   umsesh_ = createNewSession(tid, fid);
 
   /* Check snapshot cache for function-specific snapshot */
-  kprintf_force(RED "Searching for fn %d\n" RESET, fid);
+  kprintf(RED "Searching for fn %d\n" RESET, fid);
   auto cache_result = um_sv_map_.find(fid);
   assert(cache_result != um_sv_map_.end());
 
@@ -195,22 +195,22 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   /* Spawn a new event to make a connection with the instance */
   ebbrt::event_manager->SpawnLocal(
       [this] {
-        kprintf_force(GREEN "Attempting to connect ...\n" RESET);
+        kprintf(RED "Hot start connect ...\n" RESET);
         // Start a new TCP connection with the http request
         size_t my_cpu = ebbrt::Cpu::GetMine();
         std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
-        umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080);
+        umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080, base_port_+=ebbrt::Cpu::Count());
       },
       /* force async */ true);
 
   umsesh_->WhenConnected().Then(
       [this, args](auto f) {
-        kprintf_force(GREEN "Connection open, sending run...\n" RESET);
+        kprintf(RED "Connection open, sending run...\n" RESET);
         umsesh_->SendHttpRequest("/run", args); });
 
   // Halt when closed
   umsesh_->WhenClosed().Then([this](auto f) {
-    kprintf_force(GREEN "Connection Closed...\n" RESET);
+    kprintf(GREEN "Connection Closed...\n" RESET);
     ebbrt::event_manager->SpawnLocal(
         [this] {
           umm::manager->Halt(); /* Return to back to init_code_and_snap */
@@ -229,7 +229,7 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   umsesh_ = nullptr;
   umm::manager->Unload();
   is_running_ = false;
-  kprintf_force(RED "Finished HOT start \n" RESET);
+  kprintf(RED "Finished HOT start \n" RESET);
   return true;
 }
 

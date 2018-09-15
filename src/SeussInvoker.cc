@@ -55,18 +55,10 @@ void seuss::Invoker::Bootstrap() {
 
   // Port naming kludge
   base_port_ = 49160 + (size_t)ebbrt::Cpu::GetMine(); 
-
-  std::ostringstream optstream;
-  // TODO: avoid locking operation
-  optstream << R"({"cmdline":"bin/node-default /nodejsActionBase/app.js",
- "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.)"
-       << (size_t)ebbrt::Cpu::GetMine() << R"(","mask":"16"}})";
-  std::string opts  = optstream.str();
-
   auto sv = umm::ElfLoader::createSVFromElf(&_sv_start);
   auto umi = std::make_unique<umm::UmInstance>(sv);
   uint64_t argc = Solo5BootArguments(sv.GetRegionByName("usr").start,
-                                     SOLO5_USR_REGION_SIZE, opts);
+                                     SOLO5_USR_REGION_SIZE, umi_config_);
 
   // Set the IP address
   umi->SetArguments(argc);
@@ -153,9 +145,7 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
       [this] {
         // Start a new TCP connection with the http request
         kprintf(YELLOW "Warm start connect \n" RESET);
-        size_t my_cpu = ebbrt::Cpu::GetMine();
-        std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
-        
+        std::array<uint8_t, 4> umip = {{169, 254, 1, 1}};
         umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080, base_port_+=ebbrt::Cpu::Count());
       },
       /* force async */ true);
@@ -197,8 +187,7 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
       [this] {
         kprintf(RED "Hot start connect ...\n" RESET);
         // Start a new TCP connection with the http request
-        size_t my_cpu = ebbrt::Cpu::GetMine();
-        std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
+        std::array<uint8_t, 4> umip = {{169, 254, 1, 1}};
         umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080, base_port_+=ebbrt::Cpu::Count());
       },
       /* force async */ true);

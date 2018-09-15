@@ -17,3 +17,4 @@
 [submodule "src/umm"]
 	path = src/umm
 	url = git@github.com:SESA/Umm.git
+	ignore = dirty

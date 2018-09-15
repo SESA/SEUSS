@@ -48,9 +48,6 @@ private:
   void queue_invocation(uint64_t tid, size_t fid, const std::string args,
                                        const std::string code);
   InvocationSession* create_session(uint64_t tid, size_t fid);
-
-
-
   bool is_bootstrapped_{false}; // Have we created a base snapshot
   bool is_running_{false};      // Have we booted the snapshot
 
@@ -59,20 +56,18 @@ private:
   InvocationSession *umsesh_{nullptr};
   uint16_t base_port_;
 
-  // TODO: FIXME: XXX: locking...
-  std::mutex m_;
   // Arg code pair
   typedef std::tuple<size_t, std::string, std::string> invocation_request;
   // map tid to (arg, code) pairs.
   std::unordered_map<uint64_t, invocation_request> request_map_;
   // Queue requests by tid
   std::queue<uint64_t> request_queue_;
-
-  // std::unordered_map<uint32_t, ebbrt::Promise<void>> promise_map_;
-
   umm::UmSV base_um_env_;
   // Lookup sv by fid.
   std::unordered_map<size_t, umm::UmSV> um_sv_map_;
+  const std::string umi_config_ = R"({"cmdline":"bin/node-default /nodejsActionBase/app.js",
+ "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.1","mask":"16"}})";
+
 };
 
 constexpr auto invoker = ebbrt::EbbRef<Invoker>(Invoker::global_id);

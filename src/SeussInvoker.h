@@ -42,12 +42,12 @@ public:
   void Resolve(InvocationStats istats, const std::string ret_args);
 
 private:
+  void deploy_queued_request();
   bool process_warm_start(size_t fid, uint64_t tid, std::string code, std::string args);
   bool process_hot_start(size_t fid, uint64_t tid, std::string args);
-  void queueInvocation(uint64_t tid, const std::string args,
+  void queue_invocation(uint64_t tid, size_t fid, const std::string args,
                                        const std::string code);
-  void deployQueuedRequest();
-  InvocationSession* createNewSession(uint64_t tid, size_t fid);
+  InvocationSession* create_session(uint64_t tid, size_t fid);
 
 
 
@@ -62,7 +62,7 @@ private:
   // TODO: FIXME: XXX: locking...
   std::mutex m_;
   // Arg code pair
-  typedef std::pair<std::string, std::string> invocation_request;
+  typedef std::tuple<size_t, std::string, std::string> invocation_request;
   // map tid to (arg, code) pairs.
   std::unordered_map<uint64_t, invocation_request> request_map_;
   // Queue requests by tid

@@ -91,10 +91,10 @@ void seuss::Invoker::Bootstrap() {
   return;
 }
 
-void seuss::Invoker::queueInvocation(uint64_t tid, const std::string args,
+void seuss::Invoker::queue_invocation(uint64_t tid, size_t fid, const std::string args,
                                      const std::string code) {
    // Core is busy, queue up this invocation request
-   auto record = std::make_pair(args, code);
+   auto record = std::make_tuple(fid, args, code);
    bool inserted;
    // insert records into the hash tables
    std::tie(std::ignore, inserted) =
@@ -110,7 +110,7 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
   kprintf(YELLOW "Processing WARM start \n" RESET);
 
   // TODO: this in each start instead of here?
-  umsesh_ = createNewSession(tid, fid);
+  umsesh_ = create_session(tid, fid);
 
   ebbrt::Future<umm::UmSV> hot_sv_f = umm::manager->SetCheckpoint(
       umm::ElfLoader::GetSymbolAddress("uv_uptime"));
@@ -182,7 +182,7 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   kprintf(RED "Processing HOT start \n" RESET);
 
   // TODO: this in each start instead of here?
-  umsesh_ = createNewSession(tid, fid);
+  umsesh_ = create_session(tid, fid);
 
   /* Check snapshot cache for function-specific snapshot */
   kprintf(RED "Searching for fn %d\n" RESET, fid);
@@ -233,24 +233,25 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   return true;
 }
 
-void seuss::Invoker::deployQueuedRequest(){
+void seuss::Invoker::deploy_queued_request(){
   auto tid = request_queue_.front();
   request_queue_.pop();
   auto req = request_map_.find(tid);
   // TODO: fail gracefully, drop request
   assert(req != request_map_.end());
   auto req_vals = req->second;
-  auto args = req_vals.first;
-  auto code = req_vals.second;
+  size_t fid = std::get<0>(req_vals);
+  std::string args = std::get<1>(req_vals);
+  std::string code = std::get<2>(req_vals);
   request_map_.erase(tid);
   // Invoke the function
   kprintf("Core %u: Pulling request #%lu from queue (qlen=%d)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, request_queue_.size());
   // TODO: Weird recursion, why not drive from outside?
-  Invoke(tid, 0, args, code);
+  Invoke(tid, fid, args, code);
 }
 
-seuss::InvocationSession* seuss::Invoker::createNewSession(uint64_t tid, size_t fid) {
+seuss::InvocationSession* seuss::Invoker::create_session(uint64_t tid, size_t fid) {
   fid_ = fid;
   // NOTE: old way of stack allocating pcb and istats.
   // ebbrt::NetworkManager::TcpPcb pcb;
@@ -275,7 +276,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
 
   /* Queue the invocation if the core if busy */
   if (is_running_) {
-    queueInvocation(tid, args, code);
+    queue_invocation(tid, fid, args, code);
     return;
   }
 
@@ -316,7 +317,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
         // If there's a queued request, let's deploy it
         // TODO: control this in an outter loop? Weird recursion inside.
   if (!request_queue_.empty())
-    deployQueuedRequest();
+    deploy_queued_request();
       // }, /* force async */ true);
 }
 

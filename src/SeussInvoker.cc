@@ -177,7 +177,10 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   /* Check snapshot cache for function-specific snapshot */
   kprintf(RED "Searching for fn %d\n" RESET, fid);
   auto cache_result = um_sv_map_.find(fid);
-  assert(cache_result != um_sv_map_.end());
+  if(unlikely(cache_result == um_sv_map_.end())){
+    kprintf_force(RED "Error: no snapshot for fid %d\n" RESET, fid);
+		ebbrt::kabort();
+  }
 
   kprintf("invoker_core %d: Invocation cache HIT for function #%d\n",
           (size_t)ebbrt::Cpu::GetMine(), fid);

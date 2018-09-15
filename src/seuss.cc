@@ -35,7 +35,7 @@ void AppMain() {
 void AppMain() {
   ebbrt::dsys::Init(); // Static Ebb constructor
   seuss::Init();
-  //openwhisk::connect();
-  openwhisk::test();
+  openwhisk::connect();
+  //openwhisk::test();
 }
 #endif

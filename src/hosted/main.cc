@@ -64,7 +64,7 @@ int main(int argc, char **argv) {
   /** Start EbbRT runtime */
   void *status;
   pthread_t tid =
-      ebbrt::Cpu::EarlyInit((1 + openwhisk::thread_count + ebbrt::dsys::initial_instance_count));
+      ebbrt::Cpu::EarlyInit((1 + openwhisk::thread_count + ebbrt::dsys::native_instance_count));
   pthread_join(tid, &status);
   return 0;
 }

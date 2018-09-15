@@ -25,7 +25,9 @@ namespace dsys {
 // Global configuration
 extern std::string  native_binary_path;
 extern std::string  zookeeper_host;
-extern uint16_t initial_instance_count;
+extern uint16_t native_instance_count;
+extern uint16_t native_core_count;
+extern uint16_t native_memory_gb;
 extern bool local_init;
 
 #ifdef __ebbrt__

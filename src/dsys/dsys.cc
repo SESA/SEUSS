@@ -6,7 +6,9 @@
 
 std::string  ebbrt::dsys::native_binary_path;
 std::string  ebbrt::dsys::zookeeper_host;
-uint16_t ebbrt::dsys::initial_instance_count;
+uint16_t ebbrt::dsys::native_instance_count;
+uint16_t ebbrt::dsys::native_core_count;
+uint16_t ebbrt::dsys::native_memory_gb;
 bool ebbrt::dsys::local_init;
 
 void ebbrt::dsys::Init(){
@@ -16,7 +18,7 @@ void ebbrt::dsys::Init(){
 #if __ebbrt__ 
   controller->Join();
 #else
-  auto count = initial_instance_count;
+  auto count = native_instance_count;
   while(count--){
     controller->AllocateNativeInstances(native_binary_path);
   }
@@ -27,8 +29,12 @@ void ebbrt::dsys::Init(){
 #ifndef __ebbrt__
 po::options_description ebbrt::dsys::program_options() {
   po::options_description options("EbbRT configuration");
-  options.add_options()("natives,n", po::value<uint16_t>(&initial_instance_count),
+  options.add_options()("natives,n", po::value<uint16_t>(&native_instance_count)->default_value(1),
                         "native instance count");
+  options.add_options()("cores,c", po::value<uint16_t>(&native_core_count)->default_value(2),
+                        "native instance core amount");
+  options.add_options()("ram,m", po::value<uint16_t>(&native_memory_gb)->default_value(4),
+                        "native instance memory (GB)");
   options.add_options()("elf32,b", po::value<std::string>(),
                         "native binary path");
   options.add_options()("zookeeper,z", po::value<std::string>(),
@@ -41,16 +47,17 @@ bool ebbrt::dsys::process_program_options(po::variables_map &vm){
   // native instance count
   if (vm.count("natives")) {
     std::cout << "Native instances to spawn: " << vm["natives"].as<uint16_t>() << std::endl;
-  }else{
-    initial_instance_count = 0; 
   }
-
   // native binary path
   if (vm.count("elf32")) {
-    std::cout << "Native binary to boot: " << vm["elf32"].as<std::string>() << std::endl;
     auto bindir = fs::current_path() / vm["elf32"].as<std::string>();
 		native_binary_path = bindir.string();
+    std::cout << "Native binary path: " << native_binary_path  << std::endl;
   }
+ 
+  // VM configuration
+  std::cout << "Native instance config: " << native_core_count 
+            << "-core " << native_memory_gb << "GB ram" << std::endl;
 
   // zookeeper host
   if (vm.count("zookeeper")) {

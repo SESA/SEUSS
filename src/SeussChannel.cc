@@ -131,7 +131,7 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
     ebbrt::event_manager->SpawnRemote(
         [hdr, args, code]() {
           seuss::invoker->Invoke(hdr.record.transaction_id,
-                                 123, args, code);
+                                 hdr.record.function_id, args, code);
         },
         (count_ % ebbrt::Cpu::Count())); // cycle invocations between cores 
     count_++;

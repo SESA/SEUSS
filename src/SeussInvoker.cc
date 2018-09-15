@@ -182,7 +182,7 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
 		ebbrt::kabort();
   }
 
-  kprintf("invoker_core %d: Invocation cache HIT for function #%d\n",
+  kprintf("invoker_core %d: Invocation cache HIT for function #%u\n",
           (size_t)ebbrt::Cpu::GetMine(), fid);
 
   /* Spawn a new event to make a connection with the instance */
@@ -262,7 +262,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
                             const std::string code) {
   kassert(is_bootstrapped_);
 
-  kprintf_force("invoker_core_%d received invocation: (%d, %u)\n",
+  kprintf_force("invoker_core_%d received invocation: (%u, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
   /* Queue the invocation if the core if busy */
@@ -274,7 +274,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   // We assume the core does NOT have a running UM instance
   // TODO: verify that umm::manager->Status() == empty
   kassert(!umsesh_);
-  kprintf_force("invoker_core_%d starting invocation: (%d, %u)\n",
+  kprintf_force("invoker_core_%d starting invocation: (%u, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
   // Create a new session this invocation
@@ -296,7 +296,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
     process_warm_start(fid, tid, code, args);
   }
   process_hot_start(fid, tid, args);
-  kprintf_force("invoker_core_%d finished invocation: (%d, %u)\n",
+  kprintf_force("invoker_core_%d finished invocation: (%u, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
   // Make sure any pending shit from warm start runs.
   // ebbrt::event_manager->SpawnLocal(

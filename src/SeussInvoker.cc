@@ -4,7 +4,6 @@
 //          http://www.boost.org/LICENSE_1_0.txt)
 
 #include <algorithm> /* std::remove */
-#include <string>
 #include <sstream> /* std::ostringstream */
 
 #include <ebbrt/Debug.h>
@@ -19,8 +18,12 @@
 #include "InvocationSession.h"
 #include "umm/src/Umm.h"
 
+#define PERF 1
+// #ifdef PERF
+#include "Counter.h"
+// #endif
+
 #define kprintf ebbrt::kprintf
-using ebbrt::kprintf_force;
 
 void seuss::Init(){
   auto rep = new SeussChannel(SeussChannel::global_id);
@@ -115,7 +118,7 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
         um_sv_map_.emplace(fid, std::move(f.Get()));
     // Assert there was no collision on the key
     assert(inserted);
-      kprintf_force(YELLOW "Snapshot created for fid #%d\n" RESET, fid);
+      kprintf(YELLOW "Snapshot created for fid #%d\n" RESET, fid);
   }); // End hot_sv_f.Then(...)
 
   /* Setup the asyncronous operations on the InvocationSession */
@@ -258,12 +261,30 @@ seuss::InvocationSession* seuss::Invoker::create_session(uint64_t tid, size_t fi
   return new InvocationSession(std::move(*pcb), *isp);
 }
 
+
 void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
                             const std::string code) {
-  kassert(is_bootstrapped_);
+  Counter ctr;
+  ctr.reset_all();
+  ctr.start_all();
 
-  kprintf_force("invoker_core_%d received invocation: (%u, %u)\n",
-          (size_t)ebbrt::Cpu::GetMine(), tid, fid);
+
+  // // Create record, grab current time.
+  // auto r = TimeRecord(&ctr, std::string("1<<30"));
+  // auto poop = TimeRecord(&ctr, std::string("poop"));
+  // uint64_t j;
+  // j = 1ULL << 30;
+  // while(--j) {
+  //     asm("");
+  // }
+
+  // Add it to list, computing diff
+  // ctr.add_to_list(r);
+  // ctr.add_to_list(poop);
+  // Print all elements in list with percentage of runtime.
+  // ctr.dump_list();
+
+  kassert(is_bootstrapped_);
 
   /* Queue the invocation if the core if busy */
   if (is_running_) {
@@ -274,8 +295,6 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   // We assume the core does NOT have a running UM instance
   // TODO: verify that umm::manager->Status() == empty
   kassert(!umsesh_);
-  kprintf_force("invoker_core_%d starting invocation: (%u, %u)\n",
-          (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
   // Create a new session this invocation
   // TODO: is stack allocated what we want?
@@ -288,27 +307,28 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   //   umsesh_ = new InvocationSession(std::move(pcb), istats);
   // }
 
-
   /* Check for a snapshot cache MISS */
   auto cache_result = um_sv_map_.find(fid);
   if (cache_result == um_sv_map_.end()) {
     /* CACHE MISS */
+    auto r = TimeRecord(&ctr, std::string("Warm"));
     process_warm_start(fid, tid, code, args);
+    ctr.add_to_list(r);
   }
-  process_hot_start(fid, tid, args);
-  kprintf_force("invoker_core_%d finished invocation: (%u, %u)\n",
-          (size_t)ebbrt::Cpu::GetMine(), tid, fid);
-  // Make sure any pending shit from warm start runs.
-  // ebbrt::event_manager->SpawnLocal(
-  //     [this, fid, args]() {
-  //       kprintf_force(MAGENTA "Invoke hot start!\n" RESET);
-        // process_hot_start(fid, args);
 
-        // If there's a queued request, let's deploy it
-        // TODO: control this in an outter loop? Weird recursion inside.
+  auto z = TimeRecord(&ctr, std::string("Hot"));
+  process_hot_start(fid, tid, args);
+  ctr.add_to_list(z);
+
+  // If there's a queued request, let's deploy it
+  // TODO: control this in an outter loop? Weird recursion inside.
   if (!request_queue_.empty())
     deploy_queued_request();
-      // }, /* force async */ true);
+
+#ifdef PERF
+  ctr.stop_all();
+  ctr.dump_list();
+#endif
 }
 
 void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {

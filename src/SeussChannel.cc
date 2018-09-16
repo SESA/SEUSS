@@ -12,6 +12,8 @@
 
 #include <ebbrt/Debug.h>
 
+#define PERF 1
+
 // This is *IMPORTANT*, it allows the messenger to resolve remote HandleFaults
 EBBRT_PUBLISH_TYPE(seuss, SeussChannel);
 
@@ -119,6 +121,8 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
     }
   }
 
+  auto target_cpu = ebbrt::Cpu::Count() - 1;
+
   // Process the message type
   switch (hdr.type) {
 #ifdef __ebbrt__ /* Native (EbbRT) */
@@ -126,15 +130,22 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
     kprintf_force("SeussChannel - ping!\n");
     break;
   case MsgType::request:
-    /* Round robin between secondary cores */
     /* Call the invoker to spawn the action */
+
+    // Send traffic to one core for performance testing.
+    // Want to denoise performance, don't run on 0, dont run on receiver.
+    // NOTE: for this to work, must allocate at least 3 cpus.
+    kassert(ebbrt::Cpu::Count() <= 3);
+    if(io_core == target_cpu)
+      target_cpu--;
+
     ebbrt::event_manager->SpawnRemote(
         [hdr, args, code]() {
           seuss::invoker->Invoke(hdr.record.transaction_id,
                                  hdr.record.function_id, args, code);
         },
-        (count_ % ebbrt::Cpu::Count())); // cycle invocations between cores 
-    count_++;
+        (target_cpu)); // cycle invocations between cores 
+    // count_++;
     break;
   case MsgType::reply:
     kabort("Received invocation reply on EbbRT (native)!?\n");

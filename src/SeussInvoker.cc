@@ -4,7 +4,6 @@
 //          http://www.boost.org/LICENSE_1_0.txt)
 
 #include <algorithm> /* std::remove */
-#include <string>
 #include <sstream> /* std::ostringstream */
 
 #include <ebbrt/Debug.h>
@@ -17,7 +16,7 @@
 #include "SeussChannel.h"
 
 #include "InvocationSession.h"
-#include "umm/src/Umm.h"
+#include "umm/src/UmManager.h"
 
 #define kprintf ebbrt::kprintf
 using ebbrt::kprintf_force;
@@ -236,6 +235,7 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
   const std::string code = i.code;
 
   // TODO: this in each start instead of here?
+
   umsesh_ = create_session(tid, fid);
 
   /* Check snapshot cache for function-specific snapshot */
@@ -283,16 +283,42 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
         /* force async */ true);
   });
 
+#if HOT_PATH_PERF
+  auto b = umm::manager->ctr.CreateTimeRecord(std::string("create ins"));
+#endif
+
   auto umi2 = std::make_unique<umm::UmInstance>(*(cache_result->second));
+
+#if HOT_PATH_PERF
+  umm::manager->ctr.add_to_list(b);
+#endif
+
   umm::manager->Load(std::move(umi2));
+
   /* Boot the snapshot */
   is_running_ = true;
+
+#if HOT_PATH_PERF
+  auto d = umm::manager->ctr.CreateTimeRecord(std::string("run"));
+#endif
+  umm::manager->pg_ft_count = 0;
   umm::manager->runSV(); // blocks until umm::manager->Halt() is called
+  printf(RED "Num pg faults during hot start %lu\n" RESET, umm::manager->pg_ft_count);
+#if HOT_PATH_PERF
+  umm::manager->ctr.add_to_list(d);
+#endif
   /* After instance is halted */
   /* RETURN HERE AFTER HALT */
   delete umsesh_;
   umsesh_ = nullptr;
+
+#if HOT_PATH_PERF
+  auto e = umm::manager->ctr.CreateTimeRecord(std::string("unload"));
+#endif
   umm::manager->Unload();
+#if HOT_PATH_PERF
+  umm::manager->ctr.add_to_list(e);
+#endif
   is_running_ = false;
   kprintf(RED "Finished HOT start \n" RESET);
   return true;
@@ -329,6 +355,7 @@ void seuss::Invoker::Poke(){
   }
 } 
 
+bool ctr_init = false;
 void seuss::Invoker::Invoke(seuss::Invocation i) {
   kassert(is_bootstrapped_);
   uint64_t tid = i.info.transaction_id;
@@ -370,6 +397,25 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
     kprintf("invoker_core_%d invoking from queue\n");
     ebbrt::event_manager->SpawnLocal([this, next_i]() { Invoke(next_i); }, true);
   }
+
+#if PERF
+  if(! ctr_init){
+    ctr_init = true;
+    kprintf_force(CYAN "Init CTRS!!!\n" RESET);
+    // Anything added before this should be dropped.
+    umm::manager->ctr.init_ctrs();
+  }
+  umm::manager->ctr.reset_all();
+  umm::manager->ctr.start_all();
+#endif
+
+
+#if PERF
+  umm::manager->ctr.stop_all();
+  umm::manager->ctr.dump_list();
+  umm::manager->ctr.clear_list();
+#endif
+
 }
 
 void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {

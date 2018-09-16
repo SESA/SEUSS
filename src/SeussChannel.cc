@@ -12,6 +12,7 @@
 
 #include <ebbrt/Debug.h>
 
+
 // This is *IMPORTANT*, it allows the messenger to resolve remote HandleFaults
 EBBRT_PUBLISH_TYPE(seuss, SeussChannel);
 
@@ -120,6 +121,8 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
     }
   }
 
+  auto target_cpu = ebbrt::Cpu::Count() - 1;
+
   // Process the message type
   switch (hdr.type) {
 #ifdef __ebbrt__ /* Native (EbbRT) */
@@ -127,7 +130,6 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
     kprintf_force("SeussChannel - ping!\n");
     break;
   case MsgType::request:
-    /* Round robin between secondary cores */
     /* Call the invoker to spawn the action */
     seuss::invoker->Queue(i);
     break;

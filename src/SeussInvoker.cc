@@ -115,7 +115,7 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
         um_sv_map_.emplace(fid, std::move(f.Get()));
     // Assert there was no collision on the key
     assert(inserted);
-      kprintf_force(YELLOW "Snapshot created for fid #%d\n" RESET, fid);
+      kprintf_force(YELLOW "Snapshot created for fid #%u\n" RESET, fid);
   }); // End hot_sv_f.Then(...)
 
   /* Setup the asyncronous operations on the InvocationSession */
@@ -178,7 +178,7 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   kprintf(RED "Searching for fn %d\n" RESET, fid);
   auto cache_result = um_sv_map_.find(fid);
   if(unlikely(cache_result == um_sv_map_.end())){
-    kprintf_force(RED "Error: no snapshot for fid %d\n" RESET, fid);
+    kprintf_force(RED "Error: no snapshot for fid %u\n" RESET, fid);
 		ebbrt::kabort();
   }
 

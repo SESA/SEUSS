@@ -131,7 +131,6 @@ void openwhisk::kafka::activation_consumer_loop() {
     // Try to consume a message
     Message msg = kafka_consumer.poll(); // XXX: I assume this blocks..?
     if (msg) {
-      cout << "kafka: Activation message received! " << endl;
       // If we managed to get a message
       if (msg.get_error()) {
         // Ignore EOF notifications from rdkafka
@@ -169,7 +168,6 @@ void openwhisk::kafka::activation_consumer_loop() {
                 MessageBuilder builder("completed0");
                 auto pl = cm.to_json();
                 builder.payload(pl);
-                cout << "Completed response: " << pl << endl;
                 kafka_producer.produce(builder);
               });
         }

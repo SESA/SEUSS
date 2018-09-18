@@ -78,6 +78,7 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
   /* Verify if the http request was successful */
   if(http_status != "HTTP/1.1 200 OK"){
     istats_.exec.status = 1; /* INVOCATION FAILED */
+    kprintf_force(RED "INVOCATION FAILED :( %s\n", response.c_str());
     Finish(response);
   }
   /* An {"OK":true} response signals a completed INIT */

@@ -15,7 +15,7 @@ class Counter;
 
 class TimeRecord {
 public:
-  TimeRecord(Counter *ctr, std::string s);
+  TimeRecord(Counter &ctr, std::string s);
 
   std::string s_;
   uint64_t cycles_;
@@ -120,11 +120,13 @@ public:
   std::list<TimeRecord> ctr_list;
 };
 
-TimeRecord::TimeRecord(Counter *ctr, std::string s) : s_(s) {
+  // Maybe this has to be here to know about counter.
+  // TODO: can we do this without the pointer pass?
+TimeRecord::TimeRecord(Counter &ctr, std::string s) : s_(s) {
   ebbrt::kprintf_force("TimeRecord cons\n");
-  cycles_ = ctr->cycles.Read();
-  ins_ = ctr->ins.Read();
-  ref_cycles_ = ctr->ref_cycles.Read();
+  cycles_ = ctr.cycles.Read();
+  ins_ = ctr.ins.Read();
+  ref_cycles_ = ctr.ref_cycles.Read();
 }
 
 } // end ns seuss

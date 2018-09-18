@@ -220,7 +220,7 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   });
 
 
-  auto b = TimeRecord(&ctr, std::string("c_ins"));
+  auto b = TimeRecord(ctr, std::string("c_ins"));
   auto umi2 = std::make_unique<umm::UmInstance>(cache_result->second);
   ctr.add_to_list(b);
 
@@ -228,7 +228,7 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
 
   /* Boot the snapshot */
   is_running_ = true;
-  auto d = TimeRecord(&ctr, std::string("run"));
+  auto d = TimeRecord(ctr, std::string("run"));
   umm::manager->runSV(); // blocks until umm::manager->Halt() is called
   ctr.add_to_list(d);
   /* After instance is halted */
@@ -236,7 +236,7 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   // XXX: memory leak
   umsesh_ = nullptr;
 
-  auto e = TimeRecord(&ctr, std::string("unload"));
+  auto e = TimeRecord(ctr, std::string("unload"));
   umm::manager->Unload();
   ctr.add_to_list(e);
   is_running_ = false;
@@ -319,9 +319,9 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
     process_warm_start(fid, tid, code, args);
   }
 
-  auto a = TimeRecord(&ctr, std::string("hot start"));
+  // auto a = TimeRecord(ctr, std::string("hot start"));
   process_hot_start(fid, tid, args);
-  ctr.add_to_list(a);
+  // ctr.add_to_list(a);
 
 
   // If there's a queued request, let's deploy it

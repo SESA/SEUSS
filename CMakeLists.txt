@@ -32,7 +32,6 @@ set(BAREMETAL_SOURCES
       ${SOURCES}
       src/InvocationSession.cc
       src/SeussInvoker.cc
-      src/Counter.cc
       )
 
 # ebbrt-zookeeper is required by hosted & native

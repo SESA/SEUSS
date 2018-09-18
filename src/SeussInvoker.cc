@@ -19,9 +19,10 @@
 #include "umm/src/Umm.h"
 
 #define PERF 1
-// #ifdef PERF
+#ifdef PERF
 #include "Counter.h"
-// #endif
+seuss::Counter ctr;
+#endif
 
 #define kprintf ebbrt::kprintf
 
@@ -175,6 +176,7 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   kprintf(RED "Processing HOT start \n" RESET);
 
   // TODO: this in each start instead of here?
+
   umsesh_ = create_session(tid, fid);
 
   /* Check snapshot cache for function-specific snapshot */
@@ -201,7 +203,9 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   umsesh_->WhenConnected().Then(
       [this, args](auto f) {
         kprintf(RED "Connection open, sending run...\n" RESET);
-        umsesh_->SendHttpRequest("/run", args); });
+
+        umsesh_->SendHttpRequest("/run", args);
+      });
 
   // Halt when closed
   umsesh_->WhenClosed().Then([this](auto f) {
@@ -213,16 +217,26 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
         /* force async */ true);
   });
 
+
+  auto b = TimeRecord(&ctr, std::string("c_ins"));
   auto umi2 = std::make_unique<umm::UmInstance>(cache_result->second);
+  ctr.add_to_list(b);
+
   umm::manager->Load(std::move(umi2));
+
   /* Boot the snapshot */
   is_running_ = true;
+  auto d = TimeRecord(&ctr, std::string("run"));
   umm::manager->runSV(); // blocks until umm::manager->Halt() is called
+  ctr.add_to_list(d);
   /* After instance is halted */
   /* RETURN HERE AFTER HALT */
   // XXX: memory leak
   umsesh_ = nullptr;
+
+  auto e = TimeRecord(&ctr, std::string("unload"));
   umm::manager->Unload();
+  ctr.add_to_list(e);
   is_running_ = false;
   return true;
 }
@@ -262,27 +276,16 @@ seuss::InvocationSession* seuss::Invoker::create_session(uint64_t tid, size_t fi
 }
 
 
+bool ctr_init = false;
 void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
                             const std::string code) {
-  Counter ctr;
+  if(! ctr_init){
+    ctr_init = true;
+    ctr.init_ctrs();
+  }
+
   ctr.reset_all();
   ctr.start_all();
-
-
-  // // Create record, grab current time.
-  // auto r = TimeRecord(&ctr, std::string("1<<30"));
-  // auto poop = TimeRecord(&ctr, std::string("poop"));
-  // uint64_t j;
-  // j = 1ULL << 30;
-  // while(--j) {
-  //     asm("");
-  // }
-
-  // Add it to list, computing diff
-  // ctr.add_to_list(r);
-  // ctr.add_to_list(poop);
-  // Print all elements in list with percentage of runtime.
-  // ctr.dump_list();
 
   kassert(is_bootstrapped_);
 
@@ -311,14 +314,13 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   auto cache_result = um_sv_map_.find(fid);
   if (cache_result == um_sv_map_.end()) {
     /* CACHE MISS */
-    auto r = TimeRecord(&ctr, std::string("Warm"));
     process_warm_start(fid, tid, code, args);
-    ctr.add_to_list(r);
   }
 
-  auto z = TimeRecord(&ctr, std::string("Hot"));
+  auto a = TimeRecord(&ctr, std::string("hot start"));
   process_hot_start(fid, tid, args);
-  ctr.add_to_list(z);
+  ctr.aed_to_list(a);
+
 
   // If there's a queued request, let's deploy it
   // TODO: control this in an outter loop? Weird recursion inside.
@@ -328,6 +330,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
 #ifdef PERF
   ctr.stop_all();
   ctr.dump_list();
+  ctr.clear_list();
 #endif
 }
 

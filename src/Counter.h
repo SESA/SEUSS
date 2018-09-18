@@ -26,6 +26,7 @@ public:
 
 class Counter {
 public:
+  Counter(){init_ctrs();}
   void start_all();
   void stop_all();
   void clear_all();
@@ -34,13 +35,12 @@ public:
   void dump_list();
   void add_to_list(TimeRecord &r);
   void print_ctrs();
+  void clear_list();
 
-  ebbrt::perf::PerfCounter cycles =
-      ebbrt::perf::PerfCounter(ebbrt::perf::PerfEvent::cycles);
-  ebbrt::perf::PerfCounter ins =
-      ebbrt::perf::PerfCounter(ebbrt::perf::PerfEvent::instructions);
-  ebbrt::perf::PerfCounter ref_cycles =
-      ebbrt::perf::PerfCounter(ebbrt::perf::PerfEvent::reference_cycles);
+  ebbrt::perf::PerfCounter cycles;
+  ebbrt::perf::PerfCounter ins;
+  ebbrt::perf::PerfCounter ref_cycles;
+
   std::list<TimeRecord> ctr_list;
 };
 

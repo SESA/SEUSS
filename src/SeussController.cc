@@ -77,7 +77,10 @@ seuss::Controller::ScheduleActivation(
     std::tie(std::ignore, inserted) =
         record_map_.emplace(tid, std::move(record));
     // Assert there was no collision on the key
-    assert(inserted);
+    if (!inserted) {
+      std::cout << "WARNING: duplicated activation tid=" << tid << std::endl;
+      return ret; // This promise will never be fulfilled
+    }
   }
 
   /* Schedule this activation on a back-end node */

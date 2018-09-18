@@ -52,7 +52,7 @@ seuss::Controller::ScheduleActivation(
     code = openwhisk::couchdb::get_action(am.action_);
 
   auto args = am.content_;
-  uint64_t tid = am.transid_.id_; // OpenWhisk transaction id (unique)
+  uint64_t tid = std::hash<std::string>{}(am.transid_.name_); // OpenWhisk transaction id (unique)
   size_t fid = std::hash<std::string>{}(am.revision_);
 
   std::cout << "Scheduling activation tid=" << tid << std::endl; 
@@ -79,7 +79,7 @@ seuss::Controller::ScheduleActivation(
     // Assert there was no collision on the key
     if (!inserted) {
       std::cout << "WARNING: duplicated activation tid=" << tid << std::endl;
-      return ret; // This promise will never be fulfilled
+      assert(inserted);
     }
   }
 

@@ -24,7 +24,9 @@
 seuss::Counter ctr;
 #endif
 
+// Shouldn't this be included from somewhere
 #define kprintf ebbrt::kprintf
+#define kprintf_force ebbrt::kprintf_force
 
 void seuss::Init(){
   auto rep = new SeussChannel(SeussChannel::global_id);
@@ -319,7 +321,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
 
   auto a = TimeRecord(&ctr, std::string("hot start"));
   process_hot_start(fid, tid, args);
-  ctr.aed_to_list(a);
+  ctr.add_to_list(a);
 
 
   // If there's a queued request, let's deploy it

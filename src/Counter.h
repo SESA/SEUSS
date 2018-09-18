@@ -7,8 +7,6 @@
 #include <ebbrt/native/Perf.h>
 #include <ebbrt/native/Debug.h>
 
-#define kprintf_force ebbrt::kprintf_force
-
 namespace seuss {
 
 class Counter;

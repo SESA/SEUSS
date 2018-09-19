@@ -122,12 +122,13 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
   umsesh_->WhenConnected().Then(
       [this, code](auto f) {
         kprintf(YELLOW "Connected, sending init\n" RESET);
-        umsesh_->SendHttpRequest("/init", code);
+        umsesh_->SendHttpRequest("/init", code, true /* keep_alive */);
       });
 
   umsesh_->WhenInitialized().Then(
       [this, args](auto f) {
-        kprintf(YELLOW "Finished function init\n" RESET);
+        kprintf(YELLOW "Finished function init, sending run\n" RESET);
+        umsesh_->SendHttpRequest("/run", args, false);
       });
 
   // Halt when closed
@@ -159,7 +160,7 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
   umm::manager->runSV(); // blocks until umm::manager->Halt() is called
 
   /* RETURN HERE AFTER HALT */
-  // XXX: memory leak
+  delete umsesh_;
   umsesh_ = nullptr;
   umm::manager->Unload();
   is_running_ = false;
@@ -198,7 +199,7 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   umsesh_->WhenConnected().Then(
       [this, args](auto f) {
         kprintf(RED "Connection open, sending run...\n" RESET);
-        umsesh_->SendHttpRequest("/run", args); });
+        umsesh_->SendHttpRequest("/run", args, false); });
 
   // Halt when closed
   umsesh_->WhenClosed().Then([this](auto f) {
@@ -217,10 +218,11 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   umm::manager->runSV(); // blocks until umm::manager->Halt() is called
   /* After instance is halted */
   /* RETURN HERE AFTER HALT */
-  // XXX: memory leak
+  delete umsesh_;
   umsesh_ = nullptr;
   umm::manager->Unload();
   is_running_ = false;
+  kprintf(RED "Finished HOT start \n" RESET);
   return true;
 }
 
@@ -277,38 +279,21 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   kprintf("invoker_core_%d starting invocation: (%u, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
-  // Create a new session this invocation
-  // TODO: is stack allocated what we want?
-  // {
-  //   fid_ = fid;
-  //   ebbrt::NetworkManager::TcpPcb pcb;
-  //   InvocationStats istats = {0};
-  //   istats.transaction_id = tid;
-  //   istats.function_id = fid;
-  //   umsesh_ = new InvocationSession(std::move(pcb), istats);
-  // }
-
-
-  /* Check for a snapshot cache MISS */
+  /* Check for a snapshot in the cache */
   auto cache_result = um_sv_map_.find(fid);
   if (cache_result == um_sv_map_.end()) {
     /* CACHE MISS */
     process_warm_start(fid, tid, code, args);
+  }else{
+    /* CACHE HIT */
+    process_hot_start(fid, tid, args);
   }
-  process_hot_start(fid, tid, args);
-  kprintf_force("invoker_core_%d finished invocation: (%u, %u)\n",
-          (size_t)ebbrt::Cpu::GetMine(), tid, fid);
-  // Make sure any pending shit from warm start runs.
-  // ebbrt::event_manager->SpawnLocal(
-  //     [this, fid, args]() {
-  //       kprintf_force(MAGENTA "Invoke hot start!\n" RESET);
-        // process_hot_start(fid, args);
 
-        // If there's a queued request, let's deploy it
-        // TODO: control this in an outter loop? Weird recursion inside.
+  kprintf("invoker_core_%d finished invocation: (%u, %u)\n",
+          (size_t)ebbrt::Cpu::GetMine(), tid, fid);
+
   if (!request_queue_.empty())
     deploy_queued_request();
-      // }, /* force async */ true);
 }
 
 void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {

@@ -52,8 +52,8 @@ private:
   bool is_running_{false};      // Have we booted the snapshot
 
   // Session specific state 
-  size_t fid_{0};
-  InvocationSession *umsesh_{nullptr};
+  size_t fid_{0};                      // TODO: remove fid_
+  InvocationSession *umsesh_{nullptr}; // TODO: remove shared umsesh ptr, make local to invocation 
   uint16_t base_port_;
 
   // Arg code pair

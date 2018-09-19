@@ -27,7 +27,7 @@ public:
   void Connected();
 
   /* Sends an openwhisk NodeJsAction HTTP request */ 
-  void SendHttpRequest(std::string path, std::string payload);
+  void SendHttpRequest(std::string path, std::string payload, bool keep_alive=false);
 
   /* Handler for receiving data on the TCP connection */ 
   void Receive(std::unique_ptr<ebbrt::MutIOBuf> b);

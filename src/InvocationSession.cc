@@ -100,13 +100,10 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
 }
 
 void seuss::InvocationSession::SendHttpRequest(std::string path,
-                                               std::string payload) {
+                                               std::string payload, bool keep_alive) {
   kassert(payload.size() > 0);
   std::string msg;
-  if( path == "/init")
-    msg = http_post_request(path, payload, false);
-  else
-    msg = http_post_request(path, payload, false);
+  msg = http_post_request(path, payload, keep_alive);
   auto buf = ebbrt::MakeUniqueIOBuf(msg.size());
   auto dp = buf->GetMutDataPointer();
   auto str_ptr = reinterpret_cast<char *>(dp.Data());

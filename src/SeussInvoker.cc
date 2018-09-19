@@ -262,7 +262,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
                             const std::string code) {
   kassert(is_bootstrapped_);
 
-  kprintf_force("invoker_core_%d received invocation: (%u, %u)\n",
+  kprintf("invoker_core_%d received invocation: (%u, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
   /* Queue the invocation if the core if busy */
@@ -274,7 +274,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   // We assume the core does NOT have a running UM instance
   // TODO: verify that umm::manager->Status() == empty
   kassert(!umsesh_);
-  kprintf_force("invoker_core_%d starting invocation: (%u, %u)\n",
+  kprintf("invoker_core_%d starting invocation: (%u, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
   // Create a new session this invocation

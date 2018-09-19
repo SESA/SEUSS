@@ -91,7 +91,7 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
   }
 
   // check the header to ditermine the message type
-  kassert(buf_len >= sizeof(MsgHeader));
+  assert(buf_len >= sizeof(MsgHeader));
   auto dp = buf->GetDataPointer();
   auto hdr = dp.Get<MsgHeader>();
 

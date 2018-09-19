@@ -50,15 +50,17 @@ void openwhisk::test() {
         uint16_t args;
         //const std::string code = R"(function main(args) { ret~~~~~urn {done:true, arg:args.mykey};})"; /* BROKEN JS CODE TEST!!! */
         //const std::string code = R"(function main(args) { return {done:true, arg:args.mykey};})";
-        const std::string code = R"(function main(args) { var max = 1<<26; for (var line=1; line<max; line++) {} return {done:true, arg:args.mykey};})";
+        const std::string code = R"(function main(args) { var max = 1<<27; for (var line=1; line<max; line++) {} return {done:true, arg:args.mykey};})";
         /* FOR EACH STDIN, INVOKE THE FUNCTION N MANY TIMES */
         while (std::cin >> args) {
           if(!args)
              continue;
           std::cout << "Invoking test function " << args << " time(s)..." << std::endl;
           for(uint16_t i=0; i<args; i++){
+            std::ostringstream rand_name;
             auto am_tmp = am;
-            am_tmp.transid_.id_ = rand(); // OpenWhisk transaction id (unique)
+            rand_name << rand();
+            am_tmp.transid_.name_ = rand_name.str(); // OpenWhisk transaction id (unique)
             auto cmf = seuss::controller->ScheduleActivation(am_tmp, code);
             cmf.Then([i](auto f) {
               auto cm = f.Get();

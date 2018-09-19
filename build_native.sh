@@ -13,4 +13,5 @@ if [ -n "$DEBUG" ]; then
 cmake -DCMAKE_TOOLCHAIN_FILE=$TC_FILE -DCMAKE_BUILD_TYPE=Debug ../ && make -j VERBOSE=1
 else
 cmake -DCMAKE_TOOLCHAIN_FILE=$TC_FILE -DCMAKE_BUILD_TYPE=Release ../ && make -j VERBOSE=1
+#cmake -DCMAKE_TOOLCHAIN_FILE=$TC_FILE -DCMAKE_BUILD_TYPE=RelWithDebInfo ../ && make -j VERBOSE=1
 fi

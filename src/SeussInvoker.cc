@@ -260,6 +260,11 @@ seuss::InvocationSession* seuss::Invoker::create_session(uint64_t tid, size_t fi
 
 void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
                             const std::string code) {
+     InvocationStats istats = {0};
+     istats.transaction_id = tid;
+     istats.function_id = fid;
+     Resolve(istats, R"({"OK":true})");
+#if 0
   kassert(is_bootstrapped_);
 
   kprintf("invoker_core_%d received invocation: (%u, %u)\n",
@@ -309,6 +314,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   if (!request_queue_.empty())
     deploy_queued_request();
       // }, /* force async */ true);
+#endif
 }
 
 void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {

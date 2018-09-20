@@ -1,6 +1,7 @@
 // Distributed under the Boost Software License, Version 1.0.
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
+#include <unordered_map>
 #include <string>
 #include <iostream>
 #include <stdio.h>
@@ -23,6 +24,7 @@ string couchdb_address;
 string couchdb_db_auth;
 string couchdb_db_entity;
 string couchdb_db_activation;
+std::unordered_map<std::string, std::string> db_cache;
 } // end local namespace
 
 po::options_description openwhisk::couchdb::program_options() {
@@ -70,10 +72,17 @@ bool openwhisk::couchdb::init(po::variables_map &vm) {
 
 std::string openwhisk::couchdb::get_action( openwhisk::msg::Action action ){
   std::string function_code = "";
+
+  std::string key = action.path_ + action.name_ + action.version_;
+  /* Check the cache for function code */
+  auto cache_result = db_cache.find(key);
+  if((cache_result != db_cache.end())){
+    return cache_result->second;
+  }
+
   pt_response_t* response = NULL;
   pt_init();
   std::string get_addr = couchdb_address+"/"+couchdb_db_entity+"/"+action.path_+"%2F"+action.name_;
-  cout << "DB request addr: " << get_addr << endl;
   response = pt_unparsed_get(get_addr.c_str());
 
   cout << "Raw DB reponse: " << response->raw_json << endl;
@@ -93,5 +102,8 @@ std::string openwhisk::couchdb::get_action( openwhisk::msg::Action action ){
     function_code = YAJL_GET_STRING(yv);
 
   yajl_tree_free(yajl_node);
+
+  cout << "DB cache miss: " << key << endl;
+  db_cache.emplace(key, function_code);
   return function_code;
 }

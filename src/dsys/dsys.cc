@@ -8,6 +8,7 @@ std::string  ebbrt::dsys::native_binary_path;
 std::string  ebbrt::dsys::zookeeper_host;
 uint16_t ebbrt::dsys::native_instance_count;
 uint16_t ebbrt::dsys::native_core_count;
+uint16_t ebbrt::dsys::native_numa_count;
 uint16_t ebbrt::dsys::native_memory_gb;
 bool ebbrt::dsys::local_init;
 
@@ -35,6 +36,8 @@ po::options_description ebbrt::dsys::program_options() {
                         "native instance core amount");
   options.add_options()("ram,m", po::value<uint16_t>(&native_memory_gb)->default_value(4),
                         "native instance memory (GB)");
+  options.add_options()("numa", po::value<uint16_t>(&native_numa_count)->default_value(1),
+                        "native instance numa nodes");
   options.add_options()("elf32,b", po::value<std::string>(),
                         "native binary path");
   options.add_options()("zookeeper,z", po::value<std::string>(),
@@ -56,8 +59,8 @@ bool ebbrt::dsys::process_program_options(po::variables_map &vm){
   }
  
   // VM configuration
-  std::cout << "Native instance config: " << native_core_count 
-            << "-core " << native_memory_gb << "GB ram" << std::endl;
+  std::cout << "Native instance config: cores=" << native_core_count 
+            << ", ram=" << native_memory_gb << "GB, numa=" << native_numa_count << std::endl;
 
   // zookeeper host
   if (vm.count("zookeeper")) {

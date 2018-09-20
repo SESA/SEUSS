@@ -31,9 +31,13 @@ ebbrt::dsys::Controller::AllocateNativeInstances(std::string binary_path) {
   ebbrt::NodeAllocator::NodeArgs args;
   args.cpus = native_core_count;
   args.ram = native_memory_gb;
-  // Set minimum of 2GB per vcpu (not a hard requirement)
+  args.numa = native_numa_count;
+  // Set minimum of 2GB per VCPU 
   if(args.ram < (args.cpus*2))
       args.ram = (args.cpus * 2);
+  // Set minimum of 1 cpu per NUMA node 
+  if(args.cpus < (args.numa))
+      args.numa = (args.cpus);
   auto node_desc = ebbrt::node_allocator->AllocateNode(binary_path, args);
   node_desc.NetworkId().Then([START_TIME](
       ebbrt::Future<ebbrt::Messenger::NetworkId> f) {

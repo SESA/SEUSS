@@ -51,7 +51,7 @@ void seuss::Init(){
 
 void seuss::Invoker::Bootstrap() {
   kassert(!is_bootstrapped_);
-  kprintf_force("Bootstrapping Invoker on core #%d\n", (size_t)ebbrt::Cpu::GetMine());
+  kprintf_force("Bootstrapping Invoker on core #%d nid #%d\n", (size_t)ebbrt::Cpu::GetMine(), ebbrt::Cpu::GetMyNode().val());
 
   // Port naming kludge
   base_port_ = 49160 + (size_t)ebbrt::Cpu::GetMine(); 

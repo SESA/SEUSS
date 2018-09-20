@@ -20,6 +20,9 @@
 #include "Seuss.h"
 #include "InvocationSession.h"
 
+#define PERF 1
+#define HOT_PATH_PERF 1
+
 namespace seuss {
 
 void Init();

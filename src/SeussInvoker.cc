@@ -16,17 +16,10 @@
 #include "SeussChannel.h"
 
 #include "InvocationSession.h"
-#include "umm/src/Umm.h"
+#include "umm/src/UmManager.h"
 
-#define PERF 1
-#ifdef PERF
-#include "Counter.h"
-seuss::Counter ctr;
-#endif
-
-// Shouldn't this be included from somewhere
 #define kprintf ebbrt::kprintf
-#define kprintf_force ebbrt::kprintf_force
+using ebbrt::kprintf_force;
 
 void seuss::Init(){
   auto rep = new SeussChannel(SeussChannel::global_id);
@@ -219,26 +212,42 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
         /* force async */ true);
   });
 
-
-  auto b = TimeRecord(ctr, std::string("c_ins"));
+#if HOT_PATH_PERF
+  auto b = umm::manager->ctr.CreateTimeRecord(std::string("create ins"));
+#endif
   auto umi2 = std::make_unique<umm::UmInstance>(cache_result->second);
-  ctr.add_to_list(b);
+  printf(RED "Num copied dirty pages %lu\n" RESET, umm::manager->copied_dirty_pgs);
+
+#if HOT_PATH_PERF
+  umm::manager->ctr.add_to_list(b);
+#endif
 
   umm::manager->Load(std::move(umi2));
 
   /* Boot the snapshot */
   is_running_ = true;
-  auto d = TimeRecord(ctr, std::string("run"));
+
+#if HOT_PATH_PERF
+  auto d = umm::manager->ctr.CreateTimeRecord(std::string("run"));
+#endif
+  umm::manager->pg_ft_count = 0;
   umm::manager->runSV(); // blocks until umm::manager->Halt() is called
-  ctr.add_to_list(d);
+  printf(RED "Num pg faults during hot start %lu\n" RESET, umm::manager->pg_ft_count);
+#if HOT_PATH_PERF
+  umm::manager->ctr.add_to_list(d);
+#endif
   /* After instance is halted */
   /* RETURN HERE AFTER HALT */
   // XXX: memory leak
   umsesh_ = nullptr;
 
-  auto e = TimeRecord(ctr, std::string("unload"));
+#if HOT_PATH_PERF
+  auto e = umm::manager->ctr.CreateTimeRecord(std::string("unload"));
+#endif
   umm::manager->Unload();
-  ctr.add_to_list(e);
+#if HOT_PATH_PERF
+  umm::manager->ctr.add_to_list(e);
+#endif
   is_running_ = false;
   return true;
 }
@@ -281,15 +290,10 @@ seuss::InvocationSession* seuss::Invoker::create_session(uint64_t tid, size_t fi
 bool ctr_init = false;
 void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
                             const std::string code) {
-  if(! ctr_init){
-    ctr_init = true;
-    ctr.init_ctrs();
-  }
-
-  ctr.reset_all();
-  ctr.start_all();
+  kprintf_force(MAGENTA "Invoking \n" RESET);
 
   kassert(is_bootstrapped_);
+
 
   /* Queue the invocation if the core if busy */
   if (is_running_) {
@@ -301,17 +305,6 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   // TODO: verify that umm::manager->Status() == empty
   kassert(!umsesh_);
 
-  // Create a new session this invocation
-  // TODO: is stack allocated what we want?
-  // {
-  //   fid_ = fid;
-  //   ebbrt::NetworkManager::TcpPcb pcb;
-  //   InvocationStats istats = {0};
-  //   istats.transaction_id = tid;
-  //   istats.function_id = fid;
-  //   umsesh_ = new InvocationSession(std::move(pcb), istats);
-  // }
-
   /* Check for a snapshot cache MISS */
   auto cache_result = um_sv_map_.find(fid);
   if (cache_result == um_sv_map_.end()) {
@@ -319,9 +312,32 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
     process_warm_start(fid, tid, code, args);
   }
 
-  // auto a = TimeRecord(ctr, std::string("hot start"));
+#if PERF
+  if(! ctr_init){
+    ctr_init = true;
+    kprintf_force(CYAN "Init CTRS!!!\n" RESET);
+    // Anything added before this should be dropped.
+    umm::manager->ctr.init_ctrs();
+  }
+  umm::manager->ctr.reset_all();
+  umm::manager->ctr.start_all();
+#endif
+
+#if HOT_PATH_PERF
+  auto a = umm::manager->ctr.CreateTimeRecord(std::string("total hot"));
+#endif
+
   process_hot_start(fid, tid, args);
-  // ctr.add_to_list(a);
+
+#if HOT_PATH_PERF
+  umm::manager->ctr.add_to_list(a);
+#endif
+
+#if PERF
+  umm::manager->ctr.stop_all();
+  umm::manager->ctr.dump_list();
+  umm::manager->ctr.clear_list();
+#endif
 
 
   // If there's a queued request, let's deploy it
@@ -329,11 +345,6 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   if (!request_queue_.empty())
     deploy_queued_request();
 
-#ifdef PERF
-  ctr.stop_all();
-  ctr.dump_list();
-  ctr.clear_list();
-#endif
 }
 
 void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {

@@ -12,7 +12,6 @@
 
 #include <ebbrt/Debug.h>
 
-#define PERF 1
 
 // This is *IMPORTANT*, it allows the messenger to resolve remote HandleFaults
 EBBRT_PUBLISH_TYPE(seuss, SeussChannel);

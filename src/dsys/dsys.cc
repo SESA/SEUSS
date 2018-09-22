@@ -57,6 +57,10 @@ bool ebbrt::dsys::process_program_options(po::variables_map &vm){
 		native_binary_path = bindir.string();
     std::cout << "Native binary path: " << native_binary_path  << std::endl;
   }
+
+  // SEUSS-SPECIFIC SETTINGS
+  if( native_memory_gb < (native_core_count * 4))
+    native_memory_gb = (native_core_count * 4);
  
   // VM configuration
   std::cout << "Native instance config: cores=" << native_core_count 

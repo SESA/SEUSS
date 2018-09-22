@@ -57,8 +57,19 @@ void seuss::Invoker::Bootstrap() {
   base_port_ = 49160 + (size_t)ebbrt::Cpu::GetMine(); 
   auto sv = umm::ElfLoader::createSVFromElf(&_sv_start);
   auto umi = std::make_unique<umm::UmInstance>(sv);
+
+  std::string opts_ =
+      R"({"cmdline":"bin/node-default /nodejsActionBase/app.js",
+ "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.)";
+  char txt[16];
+  sprintf(txt, "%lu", (size_t)ebbrt::Cpu::GetMine());
+  opts_ += std::string(txt);
+  opts_ += R"(","mask":"16"}})";
+
+  kprintf(RED "CONFIG= %s", opts_.c_str());
+
   uint64_t argc = Solo5BootArguments(sv.GetRegionByName("usr").start,
-                                     SOLO5_USR_REGION_SIZE, umi_config_);
+                                     SOLO5_USR_REGION_SIZE, opts_);
 
   // Set the IP address
   umi->SetArguments(argc);
@@ -127,13 +138,22 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
 
   umsesh_->WhenInitialized().Then(
       [this, args](auto f) {
-        kprintf(YELLOW "Finished function init, sending run\n" RESET);
+        kprintf_force(YELLOW "Finished function init, sending run args: %s\n" RESET, args.c_str());
         umsesh_->SendHttpRequest("/run", args, false);
       });
 
-  // Halt when closed
+  // Halt when closed or aborted
   umsesh_->WhenClosed().Then([this](auto f) {
     kprintf(YELLOW "Connection Closed...\n" RESET);
+    ebbrt::event_manager->SpawnLocal(
+        [this] {
+          umm::manager->Halt(); /* Return to back to init_code_and_snap */
+        },
+        /* force async */ true);
+  });
+
+  umsesh_->WhenAborted().Then([this](auto f) {
+    kprintf(RED "SESSION ABORTED...\n" RESET);
     ebbrt::event_manager->SpawnLocal(
         [this] {
           umm::manager->Halt(); /* Return to back to init_code_and_snap */
@@ -146,7 +166,8 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
       [this] {
         // Start a new TCP connection with the http request
         kprintf(YELLOW "Warm start connect \n" RESET);
-        std::array<uint8_t, 4> umip = {{169, 254, 1, 1}};
+        size_t my_cpu = ebbrt::Cpu::GetMine();
+        std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
         umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080, base_port_+=ebbrt::Cpu::Count());
       },
       /* force async */ true);
@@ -191,7 +212,8 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
       [this] {
         kprintf(RED "Hot start connect ...\n" RESET);
         // Start a new TCP connection with the http request
-        std::array<uint8_t, 4> umip = {{169, 254, 1, 1}};
+        size_t my_cpu = ebbrt::Cpu::GetMine();
+        std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
         umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080, base_port_+=ebbrt::Cpu::Count());
       },
       /* force async */ true);
@@ -204,6 +226,14 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   // Halt when closed
   umsesh_->WhenClosed().Then([this](auto f) {
     kprintf(GREEN "Connection Closed...\n" RESET);
+    ebbrt::event_manager->SpawnLocal(
+        [this] {
+          umm::manager->Halt(); /* Return to back to init_code_and_snap */
+        },
+        /* force async */ true);
+  });
+  umsesh_->WhenAborted().Then([this](auto f) {
+    kprintf(RED "SESSION ABORTED...\n" RESET);
     ebbrt::event_manager->SpawnLocal(
         [this] {
           umm::manager->Halt(); /* Return to back to init_code_and_snap */
@@ -264,8 +294,8 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
                             const std::string code) {
   kassert(is_bootstrapped_);
 
-  kprintf("invoker_core_%d received invocation: (%u, %u)\n",
-          (size_t)ebbrt::Cpu::GetMine(), tid, fid);
+  kprintf_force("invoker_core_%d received invocation: (%u, %u)\n CODE: %s\n ARGS: %s\n",
+          (size_t)ebbrt::Cpu::GetMine(), tid, fid, code.c_str(), args.c_str());
 
   /* Queue the invocation if the core if busy */
   if (is_running_) {
@@ -276,7 +306,7 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   // We assume the core does NOT have a running UM instance
   // TODO: verify that umm::manager->Status() == empty
   kassert(!umsesh_);
-  kprintf("invoker_core_%d starting invocation: (%u, %u)\n",
+  kprintf_force("invoker_core_%d starting invocation: (%u, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
   /* Check for a snapshot in the cache */

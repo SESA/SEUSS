@@ -65,8 +65,7 @@ private:
   umm::UmSV base_um_env_;
   // Lookup sv by fid.
   std::unordered_map<size_t, umm::UmSV> um_sv_map_;
-  const std::string umi_config_ = R"({"cmdline":"bin/node-default /nodejsActionBase/app.js",
- "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.1","mask":"16"}})";
+  //const std::string umi_config_ = R"({"cmdline":"bin/node-default /nodejsActionBase/app.js", "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.1","mask":"16"}})";
 
 };
 

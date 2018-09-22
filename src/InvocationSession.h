@@ -15,7 +15,11 @@ namespace seuss {
 class InvocationSession : public ebbrt::TcpHandler {
 public:
   InvocationSession(ebbrt::NetworkManager::TcpPcb pcb, InvocationStats istats)
-      : ebbrt::TcpHandler(std::move(pcb)), istats_(istats) { Install(); }
+      : ebbrt::TcpHandler(std::move(pcb)), istats_(istats) { 
+
+    Install(); 
+    Pcb().BindCpu((size_t)ebbrt::Cpu::GetMine());
+}
 
   /* Default handler for when the TCP connection is aborted */ 
   void Abort();
@@ -58,6 +62,7 @@ private:
   ebbrt::clock::Wall::time_point command_clock_;
   /* helper methods */
   std::string http_post_request(std::string path, std::string payload, bool keep_alive);
+  std::string previous_request_;
 }; // end class InvocationSession
 } // end namespace seuss
 #endif 

@@ -78,7 +78,10 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
   /* Verify if the http request was successful */
   if(http_status != "HTTP/1.1 200 OK"){
     istats_.exec.status = 1; /* INVOCATION FAILED */
-    kprintf_force(RED "INVOCATION FAILED :( %s\n", response.c_str());
+    kprintf_force(RED "REQUEST FAILED!\n REQUEST: %s\nRESPONSE: %s\n", previous_request_.c_str(), response.c_str());
+    when_aborted_.SetValue();
+    //XXX: Not sure about this disconnect
+    Pcb().Disconnect();
     Finish(response);
   }
   /* An {"OK":true} response signals a completed INIT */
@@ -144,6 +147,8 @@ std::string seuss::InvocationSession::http_post_request(std::string path,
     ret << "Connection: keep-alive\r\n";
   ret << "content-length: " << body.size() << "\r\n\r\n"
       << body;
-  return ret.str();
+  std::string return_val = ret.str();
+  previous_request_ = return_val;
+  return return_val;
 }
 

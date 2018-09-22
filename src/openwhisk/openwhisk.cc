@@ -42,6 +42,7 @@ void openwhisk::test() {
 
   msg::ActivationMessage am(amjson);
 
+  am.content_ = std::string(R"({"spin":"27"})");
   std::cout << "Start activation test" << std::endl;
   auto action_cpu = ebbrt::Cpu::GetByIndex(thread::action);
 
@@ -50,7 +51,8 @@ void openwhisk::test() {
         uint16_t args;
         //const std::string code = R"(function main(args) { ret~~~~~urn {done:true, arg:args.mykey};})"; /* BROKEN JS CODE TEST!!! */
         //const std::string code = R"(function main(args) { return {done:true, arg:args.mykey};})";
-        const std::string code = R"(function main(args) { var max = 1<<27; for (var line=1; line<max; line++) {} return {done:true, arg:args.mykey};})";
+        const std::string code = R"(function main(args) { var spin=0; var count = 0; if(args.spin) spin=args.spin; var max = 1<<spin; for (var line=1; line<max; line++) { count++; } return {done:true, c:count}; })";
+
         /* FOR EACH STDIN, INVOKE THE FUNCTION N MANY TIMES */
         while (std::cin >> args) {
           if(!args)

@@ -323,7 +323,6 @@ void seuss::Invoker::Poke(){
   kassert(is_bootstrapped_);
   if (is_running_)
     return;
-  kprintf_force("invoker_core_%d poked!\n",(size_t)ebbrt::Cpu::GetMine());
   Invocation i;
   if(root_.GetWork(i)){
     Invoke(i);

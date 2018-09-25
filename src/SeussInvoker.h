@@ -76,13 +76,21 @@ private:
   bool is_running_{false};      // Have we booted the snapshot
 
   // Per-core Snapshot Cache 
-  std::unordered_map<size_t, umm::UmSV> um_sv_map_;
+  std::unordered_map<size_t, umm::UmSV*> um_sv_map_;
 
   // Session specific state 
   size_t fid_{0};                      // TODO: remove fid_
   InvocationSession *umsesh_{nullptr}; // TODO: remove shared umsesh ptr, make local to invocation 
   uint16_t base_port_;
-  umm::UmSV base_um_env_;
+
+  // Arg code pair
+  typedef std::tuple<size_t, std::string, std::string> invocation_request;
+  // map tid to (arg, code) pairs.
+  std::unordered_map<uint64_t, invocation_request> request_map_;
+  // Queue requests by tid
+  std::queue<uint64_t> request_queue_;
+  umm::UmSV *base_um_env_;
+  //const std::string umi_config_ = R"({"cmdline":"bin/node-default /nodejsActionBase/app.js", "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.1","mask":"16"}})";
 
 };
 

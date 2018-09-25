@@ -118,12 +118,12 @@ void seuss::Invoker::Bootstrap() {
   umi->SetArguments(argc);
   // Load instance and set breakpoint for snapshot creation
   umm::manager->Load(std::move(umi));
-  ebbrt::Future<umm::UmSV> snap_f = umm::manager->SetCheckpoint(
+  ebbrt::Future<umm::UmSV*> snap_f = umm::manager->SetCheckpoint(
       umm::ElfLoader::GetSymbolAddress("uv_uptime"));
 
   // Halt the instance after we've taking the snapshot
-  snap_f.Then([this](ebbrt::Future<umm::UmSV> snap_f) {
-    // Capture snapshot
+  snap_f.Then([this](ebbrt::Future<umm::UmSV*> snap_f) {
+    // Capture snapshot 
     base_um_env_ = snap_f.Get();
     // Spawn asyncronously to allow the snapshot exception to clean up
     // correctly
@@ -153,11 +153,11 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   // TODO: this in each start instead of here?
   umsesh_ = create_session(tid, fid);
 
-  ebbrt::Future<umm::UmSV> hot_sv_f = umm::manager->SetCheckpoint(
+  ebbrt::Future<umm::UmSV*> hot_sv_f = umm::manager->SetCheckpoint(
       umm::ElfLoader::GetSymbolAddress("uv_uptime"));
 
   // When you have the sv, cache it for future use.
-  hot_sv_f.Then([this, fid](ebbrt::Future<umm::UmSV> f) {
+  hot_sv_f.Then([this, fid](ebbrt::Future<umm::UmSV*> f) {
     // Capture snapshot
     bool inserted;
     std::tie(std::ignore, inserted) =
@@ -212,7 +212,7 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
 
   /* Load up the base snapshot environment */
   kprintf(YELLOW "Loading up base env\n" RESET);
-  auto umi2 = std::make_unique<umm::UmInstance>(base_um_env_);
+  auto umi2 = std::make_unique<umm::UmInstance>(*base_um_env_);
   umm::manager->Load(std::move(umi2));
   /* Boot the snapshot */
   is_running_ = true;
@@ -283,7 +283,7 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
         /* force async */ true);
   });
 
-  auto umi2 = std::make_unique<umm::UmInstance>(cache_result->second);
+  auto umi2 = std::make_unique<umm::UmInstance>(*(cache_result->second));
   umm::manager->Load(std::move(umi2));
   /* Boot the snapshot */
   is_running_ = true;

@@ -14,6 +14,7 @@
 #include <ebbrt/Future.h>
 #include <ebbrt/MulticoreEbb.h>
 #include <ebbrt/native/Net.h>
+#include <ebbrt/SpinLock.h>
 
 #include "umm/src/Umm.h"
 
@@ -24,48 +25,64 @@ namespace seuss {
 
 void Init();
 
+class Invoker;
+
+/*  suess::InvokerRoot
+ *  Shared ebb responsible for the Invokers work queue and segregating IO processing
+ */
+class InvokerRoot {
+public:
+  InvokerRoot(){}
+  size_t AddWork(Invocation i);
+  bool GetWork(Invocation& i);
+  ebbrt::EbbRef<Invoker> ebb_;
+private:
+  ebbrt::SpinLock qlock_;
+  // map tid to Invocation{} .
+  std::unordered_map<uint64_t, Invocation> request_map_;
+  // Queue requests by tid
+  std::queue<uint64_t> request_queue_;
+  friend class Invoker;
+}; // end class InvokerRoot 
+
+
 /*  suess::Invoker 
  *  Per-core ebb responsible for initializing the
  *  UM instances, executing the function code and, eventually, caching and
  *  redeploying instance snapshots.
  */
-class Invoker : public ebbrt::MulticoreEbb<Invoker> {
+class Invoker : public ebbrt::MulticoreEbb<Invoker, InvokerRoot> {
 public:
   static const ebbrt::EbbId global_id = ebbrt::GenerateStaticEbbId("Invoker");
-  Invoker(){};
+  explicit Invoker(const InvokerRoot& root) : root_(const_cast<InvokerRoot&>(root)){};
   /* Bootstrap the instance on this core */
   void Bootstrap();
   /* Invoke code on an uninitialized instance */
-  void Invoke(uint64_t tid, size_t fid, const std::string args,
-              const std::string code);
-  // Resolve invocation request
+  void Invoke(Invocation i);
+  /* Add request to work queue but do no work */
+  void Queue(Invocation i);
+  /* Wake core up, there's work to do! */
+  void Poke();
+  // TODO: Remove method and do resolution within Invoke(...)
   void Resolve(InvocationStats istats, const std::string ret_args);
 
 private:
-  void deploy_queued_request();
-  bool process_warm_start(size_t fid, uint64_t tid, std::string code, std::string args);
-  bool process_hot_start(size_t fid, uint64_t tid, std::string args);
-  void queue_invocation(uint64_t tid, size_t fid, const std::string args,
-                                       const std::string code);
+  // TODO(jmc): Avoid copies, make these internal functions an Invocation& 
+  bool process_warm_start(Invocation i);
+  bool process_hot_start(Invocation i);
   InvocationSession* create_session(uint64_t tid, size_t fid);
+  InvokerRoot& root_;
   bool is_bootstrapped_{false}; // Have we created a base snapshot
   bool is_running_{false};      // Have we booted the snapshot
+
+  // Per-core Snapshot Cache 
+  std::unordered_map<size_t, umm::UmSV> um_sv_map_;
 
   // Session specific state 
   size_t fid_{0};                      // TODO: remove fid_
   InvocationSession *umsesh_{nullptr}; // TODO: remove shared umsesh ptr, make local to invocation 
   uint16_t base_port_;
-
-  // Arg code pair
-  typedef std::tuple<size_t, std::string, std::string> invocation_request;
-  // map tid to (arg, code) pairs.
-  std::unordered_map<uint64_t, invocation_request> request_map_;
-  // Queue requests by tid
-  std::queue<uint64_t> request_queue_;
   umm::UmSV base_um_env_;
-  // Lookup sv by fid.
-  std::unordered_map<size_t, umm::UmSV> um_sv_map_;
-  //const std::string umi_config_ = R"({"cmdline":"bin/node-default /nodejsActionBase/app.js", "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.1","mask":"16"}})";
 
 };
 

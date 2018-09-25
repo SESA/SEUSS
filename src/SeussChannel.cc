@@ -81,8 +81,8 @@ void seuss::SeussChannel::SendRequest(ebbrt::Messenger::NetworkId nid, uint64_t 
 void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
                     std::unique_ptr<ebbrt::IOBuf> &&buf){
   uint8_t *msg_buf;
-  std::string args;
-  std::string code;
+  // Create a new Invocation record
+  Invocation i;
   auto buf_len = buf->ComputeChainDataLength();
 
   // Set the IO core of the messenger
@@ -94,6 +94,7 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
   assert(buf_len >= sizeof(MsgHeader));
   auto dp = buf->GetDataPointer();
   auto hdr = dp.Get<MsgHeader>();
+  i.info = hdr.record;
 
   // Extract the message payload(s)
   if (hdr.len > 0) {
@@ -108,12 +109,12 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
     kassert(hdr.len >= hdr.record.args_size);
     // extract the activation arguments
     if (hdr.record.args_size) {
-      args.assign(reinterpret_cast<const char *>(msg_buf),
+      i.args.assign(reinterpret_cast<const char *>(msg_buf),
                   hdr.record.args_size);
     }
     // Any additional payload data treat as function code
     if (hdr.len > hdr.record.args_size) {
-      code.assign(
+      i.code.assign(
           reinterpret_cast<const char *>(msg_buf + hdr.record.args_size),
           (hdr.len - hdr.record.args_size));
     }
@@ -128,13 +129,7 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
   case MsgType::request:
     /* Round robin between secondary cores */
     /* Call the invoker to spawn the action */
-    ebbrt::event_manager->SpawnRemote(
-        [hdr, args, code]() {
-          seuss::invoker->Invoke(hdr.record.transaction_id,
-                                 hdr.record.function_id, args, code);
-        },
-        (count_ % ebbrt::Cpu::Count())); // cycle invocations between cores 
-    count_++;
+    seuss::invoker->Queue(i);
     break;
   case MsgType::reply:
     kabort("Received invocation reply on EbbRT (native)!?\n");
@@ -147,7 +142,7 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
     kabort("Received invocation request on Linux !?\n");
     break;
   case MsgType::reply:
-    seuss::controller->ResolveActivation(hdr.record, args);
+    seuss::controller->ResolveActivation(hdr.record, i.args);
     break;
 #endif
   } // end switch(hdr.type)

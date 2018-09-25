@@ -22,5 +22,11 @@ struct InvocationStats {
   ExecStats exec;
 };
 
+struct Invocation {
+  InvocationStats info;
+  std::string code;
+  std::string args;
+};
+
 } // end seuss
 #endif

@@ -26,8 +26,8 @@ void seuss::Init(){
   auto rep = new SeussChannel(SeussChannel::global_id);
   SeussChannel::Create(rep, SeussChannel::global_id);
   umm::UmManager::Init();
-  Invoker::Create(Invoker::global_id);
-
+  auto invoker_root = new InvokerRoot();
+  invoker_root->ebb_ = Invoker::Create(invoker_root, Invoker::global_id);
   // Initialize a seuss invoker on each core 
   size_t my_cpu = ebbrt::Cpu::GetMine();
   size_t num_cpus = ebbrt::Cpu::Count();
@@ -42,19 +42,62 @@ void seuss::Init(){
           p.SetValue();
         },
         i);
-    f.Block();
+    f.Block(); // sequential initialization
   }
   kprintf_force(GREEN "\nFinished initialization of all Seuss invoker cores \n" RESET);
 }
 
-/* class suess::Invoker */
+/* class seuss::InvokerRoot */
+size_t seuss::InvokerRoot::AddWork(seuss::Invocation i) {
+  std::lock_guard<ebbrt::SpinLock> guard(qlock_);
+  Invocation record = i; 
+  auto tid = i.info.transaction_id;
+  // insert records into the hash tables
+  bool inserted;
+  std::tie(std::ignore, inserted) =
+      request_map_.emplace(tid, std::move(record));
+  // Assert there was no collision on the key
+  assert(inserted);
+  request_queue_.push(tid);
+
+  // Inform all the cores about the work
+  size_t num_cpus = ebbrt::Cpu::Count();
+  for (size_t i = 0; i < num_cpus; i++) {
+    // XXX: spawning the work to self potentially introduces starvation of the core
+    ebbrt::event_manager->SpawnRemote([this]() { ebb_->Poke(); }, i);
+  }
+  return 0;
+}
+
+bool seuss::InvokerRoot::GetWork(Invocation& i) {
+  std::lock_guard<ebbrt::SpinLock> guard(qlock_);
+  if (request_queue_.empty())
+    return false;
+  auto tid = request_queue_.front();
+  request_queue_.pop();
+  auto req = request_map_.find(tid);
+  // TODO: fail gracefully, drop request
+  assert(req != request_map_.end());
+  i = req->second;
+  request_map_.erase(tid);
+  // Invoke the function
+  kprintf("Core %u: Pulling request #%lu from queue (qlen=%d)\n",
+          (size_t)ebbrt::Cpu::GetMine(), i.info.transaction_id, request_queue_.size());
+  return true;
+}
+
+
+/* class seuss::Invoker */
 
 void seuss::Invoker::Bootstrap() {
+  // THIS SHOULD RUN AT MOST ONCE PER-CORE 
   kassert(!is_bootstrapped_);
-  kprintf_force("Bootstrapping Invoker on core #%d nid #%d\n", (size_t)ebbrt::Cpu::GetMine(), ebbrt::Cpu::GetMyNode().val());
+
+  kprintf_force("Bootstrapping Invoker on core #%d nid #%d\n",
+                (size_t)ebbrt::Cpu::GetMine(), ebbrt::Cpu::GetMyNode().val());
 
   // Port naming kludge
-  base_port_ = 49160 + (size_t)ebbrt::Cpu::GetMine(); 
+  base_port_ = 49160 + (size_t)ebbrt::Cpu::GetMine();
   auto sv = umm::ElfLoader::createSVFromElf(&_sv_start);
   auto umi = std::make_unique<umm::UmInstance>(sv);
 
@@ -80,37 +123,32 @@ void seuss::Invoker::Bootstrap() {
 
   // Halt the instance after we've taking the snapshot
   snap_f.Then([this](ebbrt::Future<umm::UmSV> snap_f) {
-    // Capture snapshot 
+    // Capture snapshot
     base_um_env_ = snap_f.Get();
-    // Spawn asyncronously to allow the snapshot exception to clean up correctly
+    // Spawn asyncronously to allow the snapshot exception to clean up
+    // correctly
     ebbrt::event_manager->SpawnLocal(
-        []() { umm::manager->Halt(); /* Return to AppMain */ }, true);
+        []() {
+          umm::manager->Halt(); /* Return to AppMain */
+        },
+        true);
   }); // End snap_f.Then(...)
   // Kick off the instance
   umm::manager->runSV();
-  // Return once manager->Halt() is called 
+  // Return once manager->Halt() is called
   umm::manager->Unload();
   is_bootstrapped_ = true;
   return;
 }
 
-void seuss::Invoker::queue_invocation(uint64_t tid, size_t fid, const std::string args,
-                                     const std::string code) {
-   // Core is busy, queue up this invocation request
-   auto record = std::make_tuple(fid, args, code);
-   bool inserted;
-   // insert records into the hash tables
-   std::tie(std::ignore, inserted) =
-     request_map_.emplace(tid, std::move(record));
-   // Assert there was no collision on the key
-   assert(inserted);
-   request_queue_.push(tid);
-}
 
-bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string code,
-                                        std::string args) {
+bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
 
   kprintf(YELLOW "Processing WARM start \n" RESET);
+  uint64_t tid = i.info.transaction_id;
+  size_t fid = i.info.function_id;
+  const std::string args = i.args;
+  const std::string code = i.code;
 
   // TODO: this in each start instead of here?
   umsesh_ = create_session(tid, fid);
@@ -138,7 +176,7 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
 
   umsesh_->WhenInitialized().Then(
       [this, args](auto f) {
-        kprintf_force(YELLOW "Finished function init, sending run args: %s\n" RESET, args.c_str());
+        kprintf(YELLOW "Finished function init, sending run args: %s\n" RESET, args.c_str());
         umsesh_->SendHttpRequest("/run", args, false);
       });
 
@@ -189,9 +227,13 @@ bool seuss::Invoker::process_warm_start(size_t fid, uint64_t tid, std::string co
   return true;
 }
 
-bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string args) {
+bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
 
   kprintf(RED "Processing HOT start \n" RESET);
+  uint64_t tid = i.info.transaction_id;
+  size_t fid = i.info.function_id;
+  const std::string args = i.args;
+  const std::string code = i.code;
 
   // TODO: this in each start instead of here?
   umsesh_ = create_session(tid, fid);
@@ -256,24 +298,6 @@ bool seuss::Invoker::process_hot_start(size_t fid, uint64_t tid, std::string arg
   return true;
 }
 
-void seuss::Invoker::deploy_queued_request(){
-  auto tid = request_queue_.front();
-  request_queue_.pop();
-  auto req = request_map_.find(tid);
-  // TODO: fail gracefully, drop request
-  assert(req != request_map_.end());
-  auto req_vals = req->second;
-  size_t fid = std::get<0>(req_vals);
-  std::string args = std::get<1>(req_vals);
-  std::string code = std::get<2>(req_vals);
-  request_map_.erase(tid);
-  // Invoke the function
-  kprintf("Core %u: Pulling request #%lu from queue (qlen=%d)\n",
-          (size_t)ebbrt::Cpu::GetMine(), tid, request_queue_.size());
-  // TODO: Weird recursion, why not drive from outside?
-  Invoke(tid, fid, args, code);
-}
-
 seuss::InvocationSession* seuss::Invoker::create_session(uint64_t tid, size_t fid) {
   fid_ = fid;
   // NOTE: old way of stack allocating pcb and istats.
@@ -290,16 +314,35 @@ seuss::InvocationSession* seuss::Invoker::create_session(uint64_t tid, size_t fi
   return new InvocationSession(std::move(*pcb), *isp);
 }
 
-void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
-                            const std::string code) {
-  kassert(is_bootstrapped_);
+void seuss::Invoker::Queue(seuss::Invocation i) {
+  root_.AddWork(i);
+  return;
+}
 
-  kprintf_force("invoker_core_%d received invocation: (%u, %u)\n CODE: %s\n ARGS: %s\n",
+void seuss::Invoker::Poke(){
+  kassert(is_bootstrapped_);
+  if (is_running_)
+    return;
+  kprintf_force("invoker_core_%d poked!\n",(size_t)ebbrt::Cpu::GetMine());
+  Invocation i;
+  if(root_.GetWork(i)){
+    Invoke(i);
+  }
+} 
+
+void seuss::Invoker::Invoke(seuss::Invocation i) {
+  kassert(is_bootstrapped_);
+  uint64_t tid = i.info.transaction_id;
+  size_t fid = i.info.function_id;
+  const std::string args = i.args;
+  const std::string code = i.code;
+
+  kprintf("invoker_core_%d received invocation: (%u, %u)\n CODE: %s\n ARGS: %s\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid, code.c_str(), args.c_str());
 
   /* Queue the invocation if the core if busy */
   if (is_running_) {
-    queue_invocation(tid, fid, args, code);
+    root_.AddWork(i);
     return;
   }
 
@@ -313,21 +356,25 @@ void seuss::Invoker::Invoke(uint64_t tid, size_t fid, const std::string args,
   auto cache_result = um_sv_map_.find(fid);
   if (cache_result == um_sv_map_.end()) {
     /* CACHE MISS */
-    process_warm_start(fid, tid, code, args);
+    process_warm_start(i);
   }else{
     /* CACHE HIT */
-    process_hot_start(fid, tid, args);
+    process_hot_start(i);
   }
 
   kprintf("invoker_core_%d finished invocation: (%u, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
-  if (!request_queue_.empty())
-    deploy_queued_request();
+  /* Check the shared queue for additional work to be done */
+  Invocation next_i;
+  if (root_.GetWork(next_i)) {
+    kprintf("invoker_core_%d invoking from queue\n");
+    ebbrt::event_manager->SpawnLocal([this, next_i]() { Invoke(next_i); }, true);
+  }
 }
 
 void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {
   seuss_channel->SendReply(
       ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), istats, ret);
-  }
+}
 

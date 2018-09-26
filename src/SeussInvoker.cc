@@ -215,7 +215,16 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   umm::manager->Load(std::move(umi2));
   /* Boot the snapshot */
   is_running_ = true;
+
+#if WARM_PATH_PERF
+  auto d = umm::manager->ctr.CreateTimeRecord(std::string("run warm"));
+#endif
+  umm::manager->pg_ft_count = 0;
   umm::manager->runSV(); // blocks until umm::manager->Halt() is called
+  printf(RED "Num pg faults during warm start %lu\n" RESET, umm::manager->pg_ft_count);
+#if WARM_PATH_PERF
+  umm::manager->ctr.add_to_list(d);
+#endif
 
   /* RETURN HERE AFTER HALT */
   delete umsesh_;
@@ -293,6 +302,7 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
   umm::manager->ctr.add_to_list(b);
 #endif
 
+
   umm::manager->Load(std::move(umi2));
 
   /* Boot the snapshot */
@@ -353,7 +363,7 @@ void seuss::Invoker::Poke(){
   if(root_.GetWork(i)){
     Invoke(i);
   }
-} 
+}
 
 bool ctr_init = false;
 void seuss::Invoker::Invoke(seuss::Invocation i) {
@@ -378,14 +388,44 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
   kprintf_force("invoker_core_%d starting invocation: (%u, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
+#if PERF
+  if(! ctr_init){
+    ctr_init = true;
+    kprintf_force(CYAN "Init CTRS!!!\n" RESET);
+    // Anything added before this should be dropped.
+    umm::manager->ctr.init_ctrs();
+  }
+  umm::manager->ctr.reset_all();
+  umm::manager->ctr.start_all();
+#endif
+
   /* Check for a snapshot in the cache */
   auto cache_result = um_sv_map_.find(fid);
   if (cache_result == um_sv_map_.end()) {
     /* CACHE MISS */
+
+#if WARM_PATH_PERF
+    auto b = umm::manager->ctr.CreateTimeRecord(std::string("WARM St"));
+#endif
+
     process_warm_start(i);
+
+#if WARM_PATH_PERF
+    umm::manager->ctr.add_to_list(b);
+#endif
+
   }else{
     /* CACHE HIT */
+#if HOT_PATH_PERF
+    auto b = umm::manager->ctr.CreateTimeRecord(std::string("HOT St"));
+#endif
+
     process_hot_start(i);
+
+#if HOT_PATH_PERF
+    umm::manager->ctr.add_to_list(b);
+#endif
+
   }
 
   kprintf("invoker_core_%d finished invocation: (%u, %u)\n",
@@ -398,16 +438,6 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
     ebbrt::event_manager->SpawnLocal([this, next_i]() { Invoke(next_i); }, true);
   }
 
-#if PERF
-  if(! ctr_init){
-    ctr_init = true;
-    kprintf_force(CYAN "Init CTRS!!!\n" RESET);
-    // Anything added before this should be dropped.
-    umm::manager->ctr.init_ctrs();
-  }
-  umm::manager->ctr.reset_all();
-  umm::manager->ctr.start_all();
-#endif
 
 
 #if PERF

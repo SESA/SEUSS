@@ -23,6 +23,7 @@
 
 #define PERF 1
 #define HOT_PATH_PERF 1
+#define WARM_PATH_PERF 1
 
 namespace seuss {
 

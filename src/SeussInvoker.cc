@@ -219,9 +219,11 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
 #if WARM_PATH_PERF
   auto d = umm::manager->ctr.CreateTimeRecord(std::string("run warm"));
 #endif
+
   umm::manager->pg_ft_count = 0;
   umm::manager->runSV(); // blocks until umm::manager->Halt() is called
   printf(RED "Num pg faults during warm start %lu\n" RESET, umm::manager->pg_ft_count);
+
 #if WARM_PATH_PERF
   umm::manager->ctr.add_to_list(d);
 #endif
@@ -365,7 +367,7 @@ void seuss::Invoker::Poke(){
   }
 }
 
-bool ctr_init = false;
+bool ctr_init[] = {false, false, false};
 void seuss::Invoker::Invoke(seuss::Invocation i) {
   kassert(is_bootstrapped_);
   uint64_t tid = i.info.transaction_id;
@@ -389,8 +391,8 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
 #if PERF
-  if(! ctr_init){
-    ctr_init = true;
+  if(! ctr_init[ebbrt::Cpu::GetMine()]){
+    ctr_init[ebbrt::Cpu::GetMine()] = true;
     kprintf_force(CYAN "Init CTRS!!!\n" RESET);
     // Anything added before this should be dropped.
     umm::manager->ctr.init_ctrs();
@@ -405,7 +407,7 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
     /* CACHE MISS */
 
 #if WARM_PATH_PERF
-    auto b = umm::manager->ctr.CreateTimeRecord(std::string("WARM St"));
+    auto b = umm::manager->ctr.CreateTimeRecord(std::string("WARM TOT"));
 #endif
 
     process_warm_start(i);
@@ -417,7 +419,7 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
   }else{
     /* CACHE HIT */
 #if HOT_PATH_PERF
-    auto b = umm::manager->ctr.CreateTimeRecord(std::string("HOT St"));
+    auto b = umm::manager->ctr.CreateTimeRecord(std::string("HOT TOT"));
 #endif
 
     process_hot_start(i);
@@ -431,6 +433,12 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
   kprintf("invoker_core_%d finished invocation: (%u, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
+#if PERF
+  umm::manager->ctr.stop_all();
+  umm::manager->ctr.dump_list();
+  umm::manager->ctr.clear_list();
+#endif
+
   /* Check the shared queue for additional work to be done */
   Invocation next_i;
   if (root_.GetWork(next_i)) {
@@ -438,13 +446,6 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
     ebbrt::event_manager->SpawnLocal([this, next_i]() { Invoke(next_i); }, true);
   }
 
-
-
-#if PERF
-  umm::manager->ctr.stop_all();
-  umm::manager->ctr.dump_list();
-  umm::manager->ctr.clear_list();
-#endif
 
 }
 

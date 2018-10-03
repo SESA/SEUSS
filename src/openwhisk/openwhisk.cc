@@ -2,9 +2,13 @@
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
 #include <chrono>
+#include <string>
 #include <iostream>
 #include <thread>
 #include <cstdlib>
+
+#include <cstdlib>
+#include <algorithm>
 
 #include "openwhisk.h"
 #include <ebbrt/Cpu.h>
@@ -13,6 +17,7 @@
 #include "../SeussController.h" // for test()
 
 std::string openwhisk::mode = "";
+using namespace std;
 
 po::options_description openwhisk::program_options() {
   po::options_description options("OpenWhisk configuration");
@@ -37,6 +42,34 @@ void openwhisk::connect() {
 
 using namespace std::chrono_literals;
 
+vector<std::string> genRevisionVec(int runs, int fns){
+  // Create vec of size runs with fns many unique stings repeated runs / fns times
+
+  kassert(runs % fns == 0);
+
+  // Use this to generate the fns many ran names.
+
+  // This is the final string we will return;
+  vector<std::string> ret(runs);
+
+  // fns many unique strings.
+  for(int i=0; i<fns; i++){
+    std::ostringstream rand_name;
+    rand_name << rand();
+    std::string tmp = rand_name.str();
+    cout << "@ " << tmp << endl;
+
+    // Inserted repeats many times.
+    int repeats = runs / fns;
+    cout << "repeats " << repeats << endl;
+    for(int j=0; j<repeats; j++){
+      ret[i*repeats + j] = tmp;
+    }
+  }
+  std::random_shuffle( ret.begin(), ret.end() );
+  return ret;
+}
+
 void openwhisk::test() {
 
   const std::string amjson =
@@ -50,33 +83,86 @@ void openwhisk::test() {
 
   ebbrt::event_manager->Spawn(
       [am]() {
-        uint16_t args;
-        //const std::string code = R"(function main(args) { ret~~~~~urn {done:true, arg:args.mykey};})"; /* BROKEN JS CODE TEST!!! */
-        //const std::string code = R"(function main(args) { return {done:true, arg:args.mykey};})";
         const std::string code = R"(function main(args) { var spin=0; var count = 0; if(args.spin) spin=args.spin; var max = 1<<spin; for (var line=1; line<max; line++) { count++; } return {done:true, c:count}; })";
 
         /* FOR EACH STDIN, INVOKE THE FUNCTION N MANY TIMES */
-        while (std::cin >> args) {
-          if(!args)
-             continue;
-          std::cout << "Invoking test function " << args << " time(s)..." << std::endl;
-          for(uint16_t i=0; i<args; i++){
-            std::ostringstream rand_name;
-            auto am_tmp = am;
-            rand_name << rand();
-            am_tmp.transid_.name_ = rand_name.str(); // OpenWhisk transaction id (unique)
-            auto cmf = seuss::controller->ScheduleActivation(am_tmp, code);
-            cmf.Then([i](auto f) {
-              auto cm = f.Get();
-              if(cm.response_.status_code_ == 0){
-                std::cout << "#" << (i + 1) << " SUCCESS " << cm.response_.annotations_ << ", duration: " << cm.response_.duration_ << std::endl;
-              }else{
-                std::cout << "#" << (i + 1) << " FAILED " << std::endl;
-              }
-            });
+        do {
+
+          std::cout << "Rounds fns ||ism sleep(ms)" << std::endl;
+
+          string benchmark_config;
+          getline(cin, benchmark_config);
+
+          if(benchmark_config.empty()){
+            cout << "try again" << endl;
+            continue;
           }
+
+          bench b(benchmark_config);
+          b.dump_bench();
+
+          if(!b.vecGood()){
+            cout << "try again" << endl;
+            continue;
+          }
+
+          if (!b.runs){
+            cout << "Zero runs, doing nothing" << endl;
+            continue;
+          }
+          // auto start = std::chrono::high_resolution_clock::now();
+
+          std::cout << "Invoking test functions " << b.runs << " time(s)..." << std::endl;
+
+          int concurrencyPool = b.parallel;
+
+          // Generate a vector of function names to execute.
+          vector<std::string> revisionVec = genRevisionVec(b.runs, b.fns);
+
+          kassert(revisionVec.size() == (unsigned)b.runs);
+
+          int i = 0;
+          for(const std::string& re : revisionVec){
+            i++;
+
+
+            std::ostringstream rand_name;
+            rand_name << rand();
+            auto am_tmp = am;
+
+            // OpenWhisk transaction id (unique)
+            am_tmp.transid_.name_ = rand_name.str();
+
+            // Assign function name;
+            am_tmp.revision_ = re;
+            cout << "running function " << re << endl;
+
+
+            // Wait for someone to finish. Don't pull so hard on the cache line.
+            while(concurrencyPool < 1)
+              std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+            // Sleep before sending request.
+            std::this_thread::sleep_for(std::chrono::milliseconds(b.sleep));
+
+            // Schedule activation, take from pool;
+            concurrencyPool -= 1;
+            auto cmf = seuss::controller->ScheduleActivation(am_tmp, code);
+
+            cmf.Then([i, &concurrencyPool](auto f) {
+              auto cm = f.Get();
+              if (cm.response_.status_code_ == 0) {
+                std::cout << "#" << (i) << " SUCCESS "
+                          << cm.response_.annotations_
+                          << ", duration: " << cm.response_.duration_
+                          << std::endl;
+              } else {
+                std::cout << "#" << (i) << " FAILED " << std::endl;
+              }
+              concurrencyPool += 1;
+              }); // then
+          } // for loop
+
           std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        }
-      },
-      action_cpu->get_context(), true);
+        } while (true); }, action_cpu->get_context(), true);
 }

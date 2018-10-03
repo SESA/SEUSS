@@ -33,6 +33,7 @@ using cppkafka::GroupInformation;
 using cppkafka::GroupMemberInformation;
 using cppkafka::MemberAssignmentInformation;
 using cppkafka::Message;
+using cppkafka::MessageList;
 using cppkafka::MessageBuilder;
 using cppkafka::Metadata;
 using cppkafka::Producer;
@@ -129,7 +130,7 @@ void openwhisk::kafka::activation_consumer_loop() {
   // Stream in Activation messages
   while (1) {
     // Try to consume a message
-    Message msg = kafka_consumer.poll(); // XXX: I assume this blocks..?
+    Message msg = kafka_consumer.poll();
     if (msg) {
       // If we managed to get a message
       if (msg.get_error()) {
@@ -141,11 +142,11 @@ void openwhisk::kafka::activation_consumer_loop() {
       } else {
         // Get the message payload
         std::string amjson = msg.get_payload();
-        kafka_consumer.commit(msg);
+        kafka_consumer.async_commit(msg);
         msg::ActivationMessage am(amjson);
         std::time_t result = std::time(nullptr);
-        cout << std::asctime(std::localtime(&result))
-             << result << " got activation " << am.transid_.name_ << endl;
+        cout << std::asctime(std::localtime(&result)) << result
+             << " got activation " << am.transid_.name_ << endl;
 
         if (openwhisk::mode == "null") {
           // Create an empty response
@@ -155,11 +156,9 @@ void openwhisk::kafka::activation_consumer_loop() {
           auto pl = cm.to_json();
           builder.payload(pl);
           kafka_producer.produce(builder);
-          if (invoker_delay > 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(invoker_delay));
-          }
         } else {
-          /* For invokerHealthTestActions we immediately return success */
+          /* For invokerHealthTestActions we immediately return
+           * success */
           if (am.action_.name_ == "invokerHealthTestAction0") {
             // Create an empty response
             msg::CompletionMessage cm(am);
@@ -169,9 +168,7 @@ void openwhisk::kafka::activation_consumer_loop() {
             builder.payload(pl);
             kafka_producer.produce(builder);
           } else {
-            // Send request to the seuss controller to
-            // fulfill
-            // XXX: Do this asynchronously?
+            // Send request to the seuss controller
             auto cmf = seuss::controller->ScheduleActivation(am);
             cmf.Then(
                 [&kafka_producer](ebbrt::Future<msg::CompletionMessage> cmf) {
@@ -182,10 +179,11 @@ void openwhisk::kafka::activation_consumer_loop() {
                   kafka_producer.produce(builder);
                 });
           }
-
-}
-
-      } // end if(msg.get_error())
+        } // end if(mode=null)
+      }   // end if(msg.get_error())
+      if (invoker_delay > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(invoker_delay));
+      }
     }   // end if(msg)
   }     // end while(1)
 }

@@ -56,6 +56,9 @@ bool ebbrt::dsys::process_program_options(po::variables_map &vm){
     auto bindir = fs::current_path() / vm["elf32"].as<std::string>();
 		native_binary_path = bindir.string();
     std::cout << "Native binary path: " << native_binary_path  << std::endl;
+  }else{
+    std::cerr << "Error: No native binary path provided" << std::endl;
+    return false;
   }
 
   // SEUSS-SPECIFIC SETTINGS

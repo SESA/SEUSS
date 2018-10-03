@@ -49,22 +49,18 @@ po::options_description openwhisk::couchdb::program_options() {
 }
 
 bool openwhisk::couchdb::init(po::variables_map &vm) {
-  std::cout << "Database Config:" << std::endl;
-  if (vm.count("couchdb_host"))
-    std::cout << "couchdb_host: " << couchdb_host << std::endl;
-  if (vm.count("couchdb_username"))
-    std::cout << "db-username: " << couchdb_username << std::endl;
-  if (vm.count("couchdb_password"))
-    std::cout << "db-password: " << couchdb_password << std::endl;
-  if (vm.count("couchdb_port"))
-    std::cout << "db-port: " << couchdb_port << std::endl;
-  if (vm.count("couchdb_protocol"))
-    std::cout << "db-protocol: " << couchdb_protocol << std::endl;
-  if (vm.count("couchdb_provider"))
-    std::cout << "db-provider: " << couchdb_provider << std::endl;
+  std::cout << "CouchDB configuration:" << std::endl;
+    std::cout << "  db_host:\t\t" << couchdb_host << std::endl;
+    std::cout << "  db-username:\t\t"  << couchdb_username << std::endl;
+    std::cout << "  db-password:\t\t" << couchdb_password << std::endl;
+    std::cout << "  db-port:\t\t" << couchdb_port << std::endl;
+    std::cout << "  db-protocol:\t\t" << couchdb_protocol << std::endl;
   
   if( couchdb_protocol.empty() || couchdb_host.empty() || couchdb_username.empty() || couchdb_password.empty() || couchdb_port.empty())
+{
+    std::cerr << "Error: CouchDB configuration incomplete" << std::endl;
     return false;
+}
 
   couchdb_address = couchdb_protocol+"://"+couchdb_username+":"+couchdb_password+"@"+couchdb_host+":"+couchdb_port;
 	return true;

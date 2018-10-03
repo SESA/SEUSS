@@ -31,6 +31,10 @@ int main(int argc, char **argv) {
   po::options_description po("Default configuration");
   po.add_options()("help", "Help message"); // Default
 
+  // Seuss Invoker mode program options
+  po.add_options()("mode", po::value<std::string>(&openwhisk::mode)->default_value("default"),
+                   "Seuss Invoker mode (default, benchmark, null)");
+
   // ebbrt dsys instance options 
   po.add(ebbrt::dsys::program_options()); 
 
@@ -51,14 +55,24 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  /** Initialize openwhisk with input arguments */
-  if (!openwhisk::process_program_options(povm)) {
-    std::cerr << "Warning: openwhisk initialization failed" << std::endl; 
+  if (povm.count("mode")) {
+    std::cout << "Seuss Invoker Mode: " << openwhisk::mode << std::endl;
   }
 
-  /** Initialize ebbrt dsys with input arguments */
-  if (!ebbrt::dsys::process_program_options(povm)) {
-    std::cerr << "Warning: EbbRT initialization failed " << std::endl; 
+  if (openwhisk::mode == "default" || openwhisk::mode == "null") {
+    /** Initialize openwhisk with input arguments */
+    if (!openwhisk::process_program_options(povm)) {
+      std::cerr << "OpenWhisk initialization failed" << std::endl;
+      std::exit(1);
+    }
+  }
+
+  if(openwhisk::mode == "default" || openwhisk::mode == "benchmark"){
+    /** Initialize ebbrt dsys with input arguments */
+    if (!ebbrt::dsys::process_program_options(povm)) {
+      std::cerr << "EbbRT initialization failed " << std::endl;
+      std::exit(1);
+    }
   }
 
   /** Start EbbRT runtime */

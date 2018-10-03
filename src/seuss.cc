@@ -33,9 +33,16 @@ void AppMain() {
 #include "SeussController.h"
 
 void AppMain() {
-  ebbrt::dsys::Init(); // Static Ebb constructor
-  seuss::Init();
-  openwhisk::connect();
-  //openwhisk::test();
+  if (openwhisk::mode == "default") {
+    ebbrt::dsys::Init(); // Static Ebb constructor
+    seuss::Init();
+    openwhisk::connect();
+  } else if (openwhisk::mode == "benchmark") {
+    ebbrt::dsys::Init(); // Static Ebb constructor
+    seuss::Init();
+    openwhisk::test();
+  } else if (openwhisk::mode == "null") {
+    openwhisk::connect();
+  }
 }
 #endif

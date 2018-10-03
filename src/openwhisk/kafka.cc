@@ -47,8 +47,7 @@ Configuration config;
 
 void openwhisk::kafka::ping_producer_loop() {
   if (kafka_broker.empty()) {
-    std::cerr << "kafka error - No broker, cannot start ping loop."
-              << std::endl;
+    std::cerr << "Error: No Kafka broker specified." << std::endl;
     return;
   }
 
@@ -114,8 +113,7 @@ void openwhisk::kafka::ping_producer_loop() {
 
 void openwhisk::kafka::activation_consumer_loop() {
   if (kafka_broker.empty()) {
-    std::cerr << "kafka error - No broker, cannot start consumer loop."
-              << std::endl;
+    std::cerr << "Error: No Kafka broker specified." << std::endl;
     return;
   }
 
@@ -192,7 +190,7 @@ bool openwhisk::kafka::init(po::variables_map &vm) {
   std::cout << "kafka: hosts " << kafka_broker << std::endl;
   std::cout << "kafka: invoker #" << std::to_string(invoker_id) << std::endl;
   if (kafka_broker.empty()) {
-    std::cerr << "kafka: Error - incomplete configuration " << std::endl;
+    std::cerr << "Error: No Kafka broker specified." << std::endl;
     return false;
   }
 

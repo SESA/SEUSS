@@ -14,6 +14,8 @@ namespace po = boost::program_options;
 
 namespace openwhisk {
 
+extern std::string mode; 
+
 constexpr size_t thread_count = 2;
 
 enum thread : size_t {

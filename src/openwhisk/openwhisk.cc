@@ -12,6 +12,8 @@
 
 #include "../SeussController.h" // for test()
 
+std::string openwhisk::mode = "";
+
 po::options_description openwhisk::program_options() {
   po::options_description options("OpenWhisk");
   options.add(kafka::program_options());

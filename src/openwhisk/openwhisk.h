@@ -12,6 +12,12 @@ namespace po = boost::program_options;
 #include "cppkafka/configuration.h"
 #include "msg.h"
 
+#include <string>
+#include <iostream>
+#include <sstream>
+
+using namespace std;
+
 namespace openwhisk {
 
 extern std::string mode; 
@@ -46,6 +52,51 @@ bool process_program_options(po::variables_map &vm);
 void connect();
 
 void test();
+
+  class bench {
+    vector<int> str_to_int_vec(string str, char delimiter) {
+      // https://www.quora.com/How-do-I-split-a-string-by-space-into-an-array-in-c++
+      vector<int> internal;
+      stringstream ss(str); // Turn the string into a stream.
+      string tok;
+
+      while (getline(ss, tok, delimiter)) {
+        internal.push_back(stoi(tok));
+      }
+      return internal;
+    }
+
+  public:
+    int runs, fns, parallel, sleep;
+    vector<int> ints;
+    unsigned expectedSize = 4; // num toggles
+
+    bench(string str) : runs(1), fns(1), parallel(1), sleep(0){
+      // Assume input str "runs users fns parallel" as decimal ints.
+      ints = str_to_int_vec(str, ' ');
+
+      runs     = ints[0];
+      fns      = ints[1];
+      parallel = ints[2];
+      sleep    = ints[3];
+    }
+
+    bool vecGood(){
+      if (ints.size() != expectedSize) {
+        cout << "Wrong size string" << endl;
+        return false;
+      }
+      return true;
+    }
+
+    void dump_bench() {
+      cout << "runs: " << runs
+           << "; fns: " << fns
+           << "; parallel: " << parallel
+           << "; sleep: " << sleep
+           << ";" << endl;
+    }
+  };
 
 } // end namespace openwhisk
 #endif // SEUSS_OPENWHISK_OPENWHISK_H_

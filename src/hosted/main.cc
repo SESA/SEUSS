@@ -34,6 +34,7 @@ int main(int argc, char **argv) {
   // Seuss Invoker mode program options
   po.add_options()("mode", po::value<std::string>(&openwhisk::mode)->default_value("default"),
                    "Seuss Invoker mode (default, benchmark, null)");
+  po.add_options()("invoker-delay,d", po::value<uint64_t>()->default_value(0), "Sleep time between invocations (ms)");
 
   // ebbrt dsys instance options 
   po.add(ebbrt::dsys::program_options()); 

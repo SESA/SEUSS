@@ -1,4 +1,5 @@
 #include <chrono>
+#include <ctime>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
@@ -42,6 +43,7 @@ using cppkafka::TopicPartitionList;
 namespace {
 string kafka_broker;
 uint64_t invoker_id = 0;
+uint64_t invoker_delay = 0;
 Configuration config;
 } // end local
 
@@ -141,34 +143,48 @@ void openwhisk::kafka::activation_consumer_loop() {
         std::string amjson = msg.get_payload();
         kafka_consumer.commit(msg);
         msg::ActivationMessage am(amjson);
+        std::time_t result = std::time(nullptr);
+        cout << std::asctime(std::localtime(&result))
+             << result << " got activation " << am.transid_.name_ << endl;
 
-        /* For invokerHealthTestActions we immediately return successful result*/
-        if (am.action_.name_ == "invokerHealthTestAction0") {
+        if (openwhisk::mode == "null") {
           // Create an empty response
           msg::CompletionMessage cm(am);
-          cm.response_.duration_ = 0;
-          cm.response_.start_ = 0;
-          cm.response_.end_ = 0;
           cm.response_.status_code_ = 0; // success
           MessageBuilder builder("completed0");
           auto pl = cm.to_json();
           builder.payload(pl);
-          cout << "Completed response: " << pl << endl;
           kafka_producer.produce(builder);
+          if (invoker_delay > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(invoker_delay));
+          }
         } else {
+          /* For invokerHealthTestActions we immediately return success */
+          if (am.action_.name_ == "invokerHealthTestAction0") {
+            // Create an empty response
+            msg::CompletionMessage cm(am);
+            cm.response_.status_code_ = 0; // success
+            MessageBuilder builder("completed0");
+            auto pl = cm.to_json();
+            builder.payload(pl);
+            kafka_producer.produce(builder);
+          } else {
+            // Send request to the seuss controller to
+            // fulfill
+            // XXX: Do this asynchronously?
+            auto cmf = seuss::controller->ScheduleActivation(am);
+            cmf.Then(
+                [&kafka_producer](ebbrt::Future<msg::CompletionMessage> cmf) {
+                  auto cm = cmf.Get();
+                  MessageBuilder builder("completed0");
+                  auto pl = cm.to_json();
+                  builder.payload(pl);
+                  kafka_producer.produce(builder);
+                });
+          }
 
-          // Send request to the seuss controller to fulfill
-          // XXX: Do this asynchronously?
-          auto cmf = seuss::controller->ScheduleActivation(am);
-          cmf.Then(
-              [&kafka_producer](ebbrt::Future<msg::CompletionMessage> cmf) {
-                auto cm = cmf.Get();
-                MessageBuilder builder("completed0");
-                auto pl = cm.to_json();
-                builder.payload(pl);
-                kafka_producer.produce(builder);
-              });
-        }
+}
+
       } // end if(msg.get_error())
     }   // end if(msg)
   }     // end while(1)
@@ -176,8 +192,9 @@ void openwhisk::kafka::activation_consumer_loop() {
 
 po::options_description openwhisk::kafka::program_options() {
   po::options_description options("Kafka");
-  options.add_options()("kafka-brokers,k", po::value<string>(), "kafka host")(
-      "kafka-topic,t", po::value<uint64_t>(), "invoker Id");
+  options.add_options()
+	("kafka-brokers,k", po::value<string>(), "kafka host")
+  ("kafka-topic,t", po::value<uint64_t>(), "invoker Id");
   return options;
 }
 
@@ -186,9 +203,14 @@ bool openwhisk::kafka::init(po::variables_map &vm) {
     kafka_broker = vm["kafka-brokers"].as<string>();
   if (vm.count("kafka-topic"))
     invoker_id = vm["kafka-topic"].as<uint64_t>();
+  if (vm.count("invoker-delay"))
+    invoker_delay = vm["invoker-delay"].as<uint64_t>();
 
-  std::cout << "kafka: hosts " << kafka_broker << std::endl;
-  std::cout << "kafka: invoker #" << std::to_string(invoker_id) << std::endl;
+  std::cout << "Kafka: hosts " << kafka_broker << std::endl;
+  std::cout << "Kafka: invoker #" << std::to_string(invoker_id) << std::endl;
+  if (invoker_delay > 0)
+    std::cout << "Kafka: invoker delay " << std::to_string(invoker_delay) << " ms" << std::endl;
+
   if (kafka_broker.empty()) {
     std::cerr << "Error: No Kafka broker specified." << std::endl;
     return false;

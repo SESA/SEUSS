@@ -15,7 +15,7 @@
 std::string openwhisk::mode = "";
 
 po::options_description openwhisk::program_options() {
-  po::options_description options("OpenWhisk");
+  po::options_description options("OpenWhisk configuration");
   options.add(kafka::program_options());
   options.add(couchdb::program_options());
   return options;

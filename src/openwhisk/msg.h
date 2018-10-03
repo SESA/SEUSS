@@ -89,9 +89,9 @@ public:
   std::string version_;
   std::string annotations_;
   /* execution data */
-  long long duration_;
-  long long start_;
-  long long end_;
+  long long duration_ = 0;
+  long long start_ = 0;
+  long long end_ = 0;
   long long status_code_;
   std::string result_ = "{}";
   std::string to_json() const {

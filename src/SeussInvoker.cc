@@ -37,7 +37,12 @@ void seuss::Init(){
     ebbrt::event_manager->SpawnRemote(
         [i, &p]() {
           kprintf("Core %d: Begin Seuss Invoker\n", i);
+
+          // HACK(tommyu)
+          // umm::manager->bootstrapping = true;
           seuss::invoker->Bootstrap();
+          // umm::manager->bootstrapping = false;
+
           p.SetValue();
         },
         i);
@@ -220,9 +225,8 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   auto d = umm::manager->ctr.CreateTimeRecord(std::string("run warm"));
 #endif
 
-  umm::manager->pg_ft_count = 0;
   umm::manager->runSV(); // blocks until umm::manager->Halt() is called
-  printf(RED "Num pg faults during warm start %lu\n" RESET, umm::manager->pg_ft_count);
+  // printf(RED "Num pg faults during warm start %lu\n" RESET, umm::manager->pg_ft_count);
 
 #if WARM_PATH_PERF
   umm::manager->ctr.add_to_list(d);
@@ -313,9 +317,9 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
 #if HOT_PATH_PERF
   auto d = umm::manager->ctr.CreateTimeRecord(std::string("run"));
 #endif
-  umm::manager->pg_ft_count = 0;
+  // umm::manager->pg_ft_count = 0;
   umm::manager->runSV(); // blocks until umm::manager->Halt() is called
-  printf(RED "Num pg faults during hot start %lu\n" RESET, umm::manager->pg_ft_count);
+  // printf(RED "Num pg faults during hot start %lu\n" RESET, umm::manager->pg_ft_count);
 #if HOT_PATH_PERF
   umm::manager->ctr.add_to_list(d);
 #endif

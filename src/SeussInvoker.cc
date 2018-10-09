@@ -85,8 +85,8 @@ bool seuss::InvokerRoot::GetWork(Invocation& i) {
   i = req->second;
   request_map_.erase(tid);
   // Invoke the function
-  kprintf("Core %u: Pulling request #%lu from queue (qlen=%d)\n",
-          (size_t)ebbrt::Cpu::GetMine(), i.info.transaction_id, request_queue_.size());
+  // kprintf("Core %u: Pulling request #%lu from queue (qlen=%d)\n",
+          // (size_t)ebbrt::Cpu::GetMine(), i.info.transaction_id, request_queue_.size());
   return true;
 }
 
@@ -148,7 +148,7 @@ void seuss::Invoker::Bootstrap() {
 
 bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
 
-  kprintf(YELLOW "Processing WARM start \n" RESET);
+  // kprintf(YELLOW "Processing WARM start \n" RESET);
   uint64_t tid = i.info.transaction_id;
   size_t fid = i.info.function_id;
   const std::string args = i.args;
@@ -174,19 +174,19 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   /* Setup the asyncronous operations on the InvocationSession */
   umsesh_->WhenConnected().Then(
       [this, code](auto f) {
-        kprintf(YELLOW "Connected, sending init\n" RESET);
+        // kprintf(YELLOW "Connected, sending init\n" RESET);
         umsesh_->SendHttpRequest("/init", code, true /* keep_alive */);
       });
 
   umsesh_->WhenInitialized().Then(
       [this, args](auto f) {
-        kprintf(YELLOW "Finished function init, sending run args: %s\n" RESET, args.c_str());
+        // kprintf(YELLOW "Finished function init, sending run args: %s\n" RESET, args.c_str());
         umsesh_->SendHttpRequest("/run", args, false);
       });
 
   // Halt when closed or aborted
   umsesh_->WhenClosed().Then([this](auto f) {
-    kprintf(YELLOW "Connection Closed...\n" RESET);
+    // kprintf(YELLOW "Connection Closed...\n" RESET);
     ebbrt::event_manager->SpawnLocal(
         [this] {
           umm::manager->Halt(); /* Return to back to init_code_and_snap */
@@ -207,7 +207,7 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   ebbrt::event_manager->SpawnLocal(
       [this] {
         // Start a new TCP connection with the http request
-        kprintf(YELLOW "Warm start connect \n" RESET);
+        // kprintf(YELLOW "Warm start connect \n" RESET);
         size_t my_cpu = ebbrt::Cpu::GetMine();
         std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
         umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080, base_port_+=ebbrt::Cpu::Count());
@@ -215,7 +215,7 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
       /* force async */ true);
 
   /* Load up the base snapshot environment */
-  kprintf(YELLOW "Loading up base env\n" RESET);
+  // kprintf(YELLOW "Loading up base env\n" RESET);
   auto umi2 = std::make_unique<umm::UmInstance>(*base_um_env_);
   umm::manager->Load(std::move(umi2));
   /* Boot the snapshot */
@@ -243,7 +243,7 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
 
 bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
 
-  kprintf(RED "Processing HOT start \n" RESET);
+  // kprintf(RED "Processing HOT start \n" RESET);
   uint64_t tid = i.info.transaction_id;
   size_t fid = i.info.function_id;
   const std::string args = i.args;
@@ -277,12 +277,12 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
 
   umsesh_->WhenConnected().Then(
       [this, args](auto f) {
-        kprintf(RED "Connection open, sending run...\n" RESET);
+        // kprintf(RED "Connection open, sending run...\n" RESET);
         umsesh_->SendHttpRequest("/run", args, false); });
 
   // Halt when closed
   umsesh_->WhenClosed().Then([this](auto f) {
-    kprintf(GREEN "Connection Closed...\n" RESET);
+    // kprintf(GREEN "Connection Closed...\n" RESET);
     ebbrt::event_manager->SpawnLocal(
         [this] {
           umm::manager->Halt(); /* Return to back to init_code_and_snap */

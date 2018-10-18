@@ -59,12 +59,16 @@ openwhisk::msg::ActivationMessage::ActivationMessage( string json ){
   if (YAJL_IS_OBJECT(yv)) {
     auto c_obj = YAJL_GET_OBJECT(yv);
     std::ostringstream ss;
-    ss << "{"; 
+    ss << "{";
     for (uint16_t i = 0; i < c_obj->len; i++) {
       if (i > 0)
         ss << ",";
-      ss << "\"" << c_obj->keys[i] << "\":\""
-         << YAJL_GET_STRING(c_obj->values[i]) << "\"";
+      ss << "\"" << c_obj->keys[i] << "\":";
+      if (YAJL_IS_STRING(c_obj->values[i])) {
+        ss << "\"" << YAJL_GET_STRING(c_obj->values[i]) << "\"";
+      } else {
+        ss << YAJL_GET_INTEGER(c_obj->values[i]);
+      }
     }
     ss << "}";
     content_ = ss.str();

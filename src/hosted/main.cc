@@ -5,6 +5,7 @@
 #include <cinttypes> // PRId64, etc
 #include <csignal>
 #include <iostream>
+#include <fstream> // std::ifstream
 #include <stdlib.h> // exit
 #include <thread> 
 #include <chrono>  
@@ -35,6 +36,8 @@ int main(int argc, char **argv) {
   po.add_options()("mode", po::value<std::string>(&openwhisk::mode)->default_value("default"),
                    "Seuss Invoker mode (default, benchmark, null)");
   po.add_options()("invoker-delay,d", po::value<uint64_t>()->default_value(0), "Sleep time between invocations (ms)");
+  po.add_options()("file,f", po::value<std::string>(),
+                        "javascript function (benchmark mode)");
 
   // ebbrt dsys instance options 
   po.add(ebbrt::dsys::program_options()); 
@@ -66,6 +69,25 @@ int main(int argc, char **argv) {
       std::cerr << "OpenWhisk initialization failed" << std::endl;
       std::exit(1);
     }
+  }
+
+  if (povm.count("file") && openwhisk::mode == "benchmark") {
+    auto bindir = fs::current_path() / povm["file"].as<std::string>();
+		std::string function_path = bindir.string();
+    std::cout << "Target function: " << function_path  << std::endl;
+
+    // read in file to string
+    std::ifstream infile(function_path);
+    if(!infile.good()){
+      std::cerr << "Unable to open file: " <<  function_path << std::endl;
+      std::exit(1);
+    }
+    std::stringstream file_buffer;
+    file_buffer << infile.rdbuf();
+    openwhisk::function = file_buffer.str();
+    std::cout << "--------------------------------------------" << std::endl
+              << openwhisk::function << std::endl
+              << "--------------------------------------------" << std::endl;
   }
 
   if(openwhisk::mode == "default" || openwhisk::mode == "benchmark"){

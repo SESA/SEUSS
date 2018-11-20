@@ -121,8 +121,6 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
     }
   }
 
-  auto target_cpu = ebbrt::Cpu::Count() - 1;
-
   // Process the message type
   switch (hdr.type) {
 #ifdef __ebbrt__ /* Native (EbbRT) */

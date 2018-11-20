@@ -107,12 +107,7 @@ void seuss::Invoker::Bootstrap() {
 
   std::string opts_ =
       R"({"cmdline":"bin/node-default /nodejsActionBase/app.js",
- "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.)";
-  char txt[16];
-  sprintf(txt, "%lu", (size_t)ebbrt::Cpu::GetMine());
-  opts_ += std::string(txt);
-  opts_ += R"(","mask":"16"}})";
-
+ "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.0","mask":"16", "gw":"169.254.1.0"}})";
   kprintf(RED "CONFIG= %s", opts_.c_str());
 
   uint64_t argc = Solo5BootArguments(sv.GetRegionByName("usr").start,
@@ -207,10 +202,8 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   ebbrt::event_manager->SpawnLocal(
       [this] {
         // Start a new TCP connection with the http request
-        // kprintf(YELLOW "Warm start connect \n" RESET);
-        size_t my_cpu = ebbrt::Cpu::GetMine();
-        std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
-        umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080, base_port_+=ebbrt::Cpu::Count());
+        kprintf(YELLOW "Warm start connect \n" RESET);
+        umsesh_->Pcb().Connect(umm::UmInstance::CoreLocalIp(), 8080, base_port_+=ebbrt::Cpu::Count());
       },
       /* force async */ true);
 
@@ -267,11 +260,9 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
   /* Spawn a new event to make a connection with the instance */
   ebbrt::event_manager->SpawnLocal(
       [this] {
-        kprintf(RED "Hot start connect ...\n" RESET);
         // Start a new TCP connection with the http request
-        size_t my_cpu = ebbrt::Cpu::GetMine();
-        std::array<uint8_t, 4> umip = {{169, 254, 1, (uint8_t)my_cpu}};
-        umsesh_->Pcb().Connect(ebbrt::Ipv4Address(umip), 8080, base_port_+=ebbrt::Cpu::Count());
+        kprintf(RED "Hot start connect ...\n" RESET);
+        umsesh_->Pcb().Connect(umm::UmInstance::CoreLocalIp(), 8080, base_port_+=ebbrt::Cpu::Count());
       },
       /* force async */ true);
 

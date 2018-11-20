@@ -10,6 +10,7 @@
 #endif
 
 #include <ebbrt/Clock.h>
+#include <ebbrt/UniqueIOBuf.h>
 #include <ebbrt/Debug.h>
 #include <ebbrt/Future.h>
 #include <ebbrt/MulticoreEbb.h>

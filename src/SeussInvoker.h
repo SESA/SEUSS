@@ -38,10 +38,14 @@ class Invoker;
 class InvokerRoot {
 public:
   InvokerRoot(){}
+  void Bootstrap();
   size_t AddWork(Invocation i);
   bool GetWork(Invocation& i);
   ebbrt::EbbRef<Invoker> ebb_;
+  umm::UmSV* GetBaseSV();
 private:
+  umm::UmSV *base_um_env_;
+  bool is_bootstrapped_{false}; // Have we created a base snapshot?
   ebbrt::SpinLock qlock_;
   // map tid to Invocation{} .
   std::unordered_map<uint64_t, Invocation> request_map_;
@@ -59,9 +63,7 @@ private:
 class Invoker : public ebbrt::MulticoreEbb<Invoker, InvokerRoot> {
 public:
   static const ebbrt::EbbId global_id = ebbrt::GenerateStaticEbbId("Invoker");
-  explicit Invoker(const InvokerRoot& root) : root_(const_cast<InvokerRoot&>(root)){};
-  /* Bootstrap the instance on this core */
-  void Bootstrap();
+  explicit Invoker(const InvokerRoot& root) : root_(const_cast<InvokerRoot&>(root)){ base_port_ = 49160 + (size_t)ebbrt::Cpu::GetMine(); };
   /* Invoke code on an uninitialized instance */
   void Invoke(Invocation i);
   /* Add request to work queue but do no work */
@@ -77,7 +79,6 @@ private:
   bool process_hot_start(Invocation i);
   InvocationSession* create_session(uint64_t tid, size_t fid);
   InvokerRoot& root_;
-  bool is_bootstrapped_{false}; // Have we created a base snapshot
   bool is_running_{false};      // Have we booted the snapshot
 
   // Per-core Snapshot Cache 
@@ -94,7 +95,7 @@ private:
   std::unordered_map<uint64_t, invocation_request> request_map_;
   // Queue requests by tid
   std::queue<uint64_t> request_queue_;
-  umm::UmSV *base_um_env_;
+  //umm::UmSV *base_um_env_;
   //const std::string umi_config_ = R"({"cmdline":"bin/node-default /nodejsActionBase/app.js", "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.1","mask":"16"}})";
 
 };

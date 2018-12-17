@@ -27,28 +27,8 @@ void seuss::Init(){
   umm::UmManager::Init();
   auto invoker_root = new InvokerRoot();
   invoker_root->ebb_ = Invoker::Create(invoker_root, Invoker::global_id);
-  // Initialize a seuss invoker on each core 
-  size_t my_cpu = ebbrt::Cpu::GetMine();
-  size_t num_cpus = ebbrt::Cpu::Count();
-  kassert(my_cpu == 0);
-  for (auto i = my_cpu; i < num_cpus; i++) {
-    ebbrt::Promise<void> p; 
-    auto f = p.GetFuture();
-    ebbrt::event_manager->SpawnRemote(
-        [i, &p]() {
-          kprintf("Core %d: Begin Seuss Invoker\n", i);
-
-          // HACK(tommyu)
-          // umm::manager->bootstrapping = true;
-          seuss::invoker->Bootstrap();
-          // umm::manager->bootstrapping = false;
-
-          p.SetValue();
-        },
-        i);
-    f.Block(); // sequential initialization
-  }
-  kprintf_force(GREEN "\nFinished initialization of all Seuss invoker cores \n" RESET);
+  invoker_root->Bootstrap();
+  kprintf_force(GREEN "\nFinished initialization of Seuss invoker root \n" RESET);
 }
 
 /* class seuss::InvokerRoot */
@@ -90,29 +70,29 @@ bool seuss::InvokerRoot::GetWork(Invocation& i) {
   return true;
 }
 
+umm::UmSV* seuss::InvokerRoot::GetBaseSV() {
+  kassert(is_bootstrapped_);
+  return base_um_env_;
+}
 
-/* class seuss::Invoker */
-
-void seuss::Invoker::Bootstrap() {
-  // THIS SHOULD RUN AT MOST ONCE PER-CORE 
+void seuss::InvokerRoot::Bootstrap() {
+  // THIS SHOULD RUN AT MOST ONCE 
   kassert(!is_bootstrapped_);
-
-  kprintf_force("Bootstrapping Invoker on core #%d nid #%d\n",
+  kprintf_force("Bootstrapping InvokerRoot on core #%d nid #%d\n",
                 (size_t)ebbrt::Cpu::GetMine(), ebbrt::Cpu::GetMyNode().val());
 
   // Port naming kludge
-  base_port_ = 49160 + (size_t)ebbrt::Cpu::GetMine();
   auto sv = umm::ElfLoader::createSVFromElf(&_sv_start);
   auto umi = std::make_unique<umm::UmInstance>(sv);
 
+  // TODO: move this to header
   std::string opts_ =
       R"({"cmdline":"bin/node-default /nodejsActionBase/app.js",
  "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.0","mask":"16", "gw":"169.254.1.0"}})";
-  kprintf(RED "CONFIG= %s", opts_.c_str());
+  kprintf(RED "CONFIG= %s" RESET, opts_.c_str());
 
   uint64_t argc = Solo5BootArguments(sv.GetRegionByName("usr").start,
                                      SOLO5_USR_REGION_SIZE, opts_);
-
   // Set the IP address
   umi->SetArguments(argc);
   // Load instance and set breakpoint for snapshot creation
@@ -140,6 +120,7 @@ void seuss::Invoker::Bootstrap() {
   return;
 }
 
+/* class seuss::Invoker */
 
 bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
 
@@ -209,7 +190,8 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
 
   /* Load up the base snapshot environment */
   // kprintf(YELLOW "Loading up base env\n" RESET);
-  auto umi2 = std::make_unique<umm::UmInstance>(*base_um_env_);
+  auto base_env = root_.GetBaseSV();
+  auto umi2 = std::make_unique<umm::UmInstance>(*base_env);
   umm::manager->Load(std::move(umi2));
   /* Boot the snapshot */
   is_running_ = true;
@@ -353,7 +335,6 @@ void seuss::Invoker::Queue(seuss::Invocation i) {
 }
 
 void seuss::Invoker::Poke(){
-  kassert(is_bootstrapped_);
   if (is_running_)
     return;
   Invocation i;
@@ -364,7 +345,6 @@ void seuss::Invoker::Poke(){
 
 bool ctr_init[] = {false, false, false};
 void seuss::Invoker::Invoke(seuss::Invocation i) {
-  kassert(is_bootstrapped_);
   uint64_t tid = i.info.transaction_id;
   size_t fid = i.info.function_id;
   const std::string args = i.args;

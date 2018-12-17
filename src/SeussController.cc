@@ -55,7 +55,6 @@ seuss::Controller::ScheduleActivation(
   uint64_t tid = std::hash<std::string>{}(am.transid_.name_); // OpenWhisk transaction id (unique)
   size_t fid = std::hash<std::string>{}(am.revision_);
 
-  std::cout << "Scheduling activation tid=" << tid << std::endl; 
   //std::cout << "CONTROLLER: scheduling activation on core #"
   //          << (size_t)ebbrt::Cpu::GetMine() 
            // << ": " << am.to_json()
@@ -74,6 +73,7 @@ seuss::Controller::ScheduleActivation(
     std::lock_guard<std::mutex> guard(m_);
     bool inserted;
     // insert records into the hash tables
+    std::cout << "Scheduling activation tid=" << tid << std::endl;
     std::tie(std::ignore, inserted) =
         record_map_.emplace(tid, std::move(record));
     // Assert there was no collision on the key
@@ -105,10 +105,13 @@ void seuss::Controller::ResolveActivation(seuss::InvocationStats istats, std::st
   // Capture the ending time
   auto end_time = std::chrono::high_resolution_clock::now();
   // Lookup activation in the table
-  auto tid = istats.transaction_id;
+  uint64_t tid = istats.transaction_id;
   std::lock_guard<std::mutex> guard(m_);
   auto it = record_map_.find(tid);
-  assert(it != record_map_.end());
+  if(it == record_map_.end()){
+    cout << "ERROR: NO RECORD FOUND FOR tid=" << tid << endl;
+    abort();
+  }
   auto record_tuple = std::move(it->second);
   openwhisk::msg::CompletionMessage cm(std::get<1>(record_tuple));
 

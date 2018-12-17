@@ -90,11 +90,10 @@ public:
 
   bool vecGood() {
     if (ints.size() > expectedSize) {
-      cout << "Wrong size string... Try again";
+      cout << "error: too many inputs...";
       return false;
     }
     if (!runs) {
-      cout << "Zero runs... Try again";
       return false;
     }
     return true;

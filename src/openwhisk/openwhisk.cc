@@ -156,6 +156,7 @@ void openwhisk::test() {
                 std::cout << "#" << (i) << " SUCCESS "
                           << cm.response_.annotations_
                           << ", duration: " << cm.response_.duration_
+                          << ", result: " << cm.response_.result_
                           << std::endl;
               } else {
                 std::cout << "#" << (i) << " FAILED " << std::endl;

@@ -75,6 +75,36 @@ umm::UmSV* seuss::InvokerRoot::GetBaseSV() {
   return base_um_env_;
 }
 
+umm::UmSV* seuss::InvokerRoot::GetSnapshot(size_t fid) {
+  kassert(is_bootstrapped_);
+  auto cache_result = snapmap_.find(fid);
+  if(cache_result == snapmap_.end()){
+    return nullptr;
+  }
+  return cache_result->second;
+}
+
+bool seuss::InvokerRoot::SetSnapshot(size_t fid, umm::UmSV* sv) {
+  kassert(is_bootstrapped_);
+  auto cache_result = snapmap_.find(fid);
+  if (cache_result != snapmap_.end()) {
+    /* CACHE HIT */
+    kprintf(RED "Wasted Snapshot for fid #%u\n" RESET, fid);
+    delete sv;
+    return false;
+  }
+  {
+    //TODO: lock?
+    bool inserted;
+    std::tie(std::ignore, inserted) =
+        snapmap_.emplace(fid, sv);
+    // Assert there was no collision on the key
+    assert(inserted);
+    kprintf_force(YELLOW "Snapshot created for fid #%u\n" RESET, fid);
+  }
+  return true;
+}
+
 void seuss::InvokerRoot::Bootstrap() {
   // THIS SHOULD RUN AT MOST ONCE 
   kassert(!is_bootstrapped_);
@@ -137,15 +167,9 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
       umm::ElfLoader::GetSymbolAddress("uv_uptime"));
 
   // When you have the sv, cache it for future use.
-  hot_sv_f.Then([this, fid](ebbrt::Future<umm::UmSV*> f) {
-    // Capture snapshot
-    bool inserted;
-    std::tie(std::ignore, inserted) =
-        um_sv_map_.emplace(fid, std::move(f.Get()));
-    // Assert there was no collision on the key
-    assert(inserted);
-      kprintf_force(YELLOW "Snapshot created for fid #%u\n" RESET, fid);
-  }); // End hot_sv_f.Then(...)
+  hot_sv_f.Then([this, fid](ebbrt::Future<umm::UmSV *> f) {
+    root_.SetSnapshot(fid, std::move(f.Get()));
+  });
 
   /* Setup the asyncronous operations on the InvocationSession */
   umsesh_->WhenConnected().Then(
@@ -230,8 +254,8 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
 
   /* Check snapshot cache for function-specific snapshot */
   kprintf(RED "Searching for fn %d\n" RESET, fid);
-  auto cache_result = um_sv_map_.find(fid);
-  if(unlikely(cache_result == um_sv_map_.end())){
+  auto cached_snap = root_.GetSnapshot(fid); // um_sv_map_.find(fid);
+  if (unlikely(cached_snap == nullptr)) {
     kprintf_force(RED "Error: no snapshot for fid %u\n" RESET, fid);
 		ebbrt::kabort();
   }
@@ -275,7 +299,7 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
   auto b = umm::manager->ctr.CreateTimeRecord(std::string("create ins"));
 #endif
 
-  auto umi2 = std::make_unique<umm::UmInstance>(*(cache_result->second));
+  auto umi2 = std::make_unique<umm::UmInstance>(*cached_snap);
 
 #if HOT_PATH_PERF
   umm::manager->ctr.add_to_list(b);
@@ -376,8 +400,8 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
 #endif
 
   /* Check for a snapshot in the cache */
-  auto cache_result = um_sv_map_.find(fid);
-  if (cache_result == um_sv_map_.end()) {
+  auto cached_snap = root_.GetSnapshot(fid); // um_sv_map_.find(fid);
+  if (cached_snap == nullptr) {
     /* CACHE MISS */
 
 #if WARM_PATH_PERF

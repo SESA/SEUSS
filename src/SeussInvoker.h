@@ -43,6 +43,8 @@ public:
   bool GetWork(Invocation& i);
   ebbrt::EbbRef<Invoker> ebb_;
   umm::UmSV* GetBaseSV();
+  umm::UmSV* GetSnapshot(size_t id);
+  bool SetSnapshot(size_t id, umm::UmSV*);
 private:
   umm::UmSV *base_um_env_;
   bool is_bootstrapped_{false}; // Have we created a base snapshot?
@@ -51,6 +53,8 @@ private:
   std::unordered_map<uint64_t, Invocation> request_map_;
   // Queue requests by tid
   std::queue<uint64_t> request_queue_;
+  // Shared snapshot cache
+  std::unordered_map<size_t, umm::UmSV*> snapmap_;
   friend class Invoker;
 }; // end class InvokerRoot 
 
@@ -80,9 +84,6 @@ private:
   InvocationSession* create_session(uint64_t tid, size_t fid);
   InvokerRoot& root_;
   bool is_running_{false};      // Have we booted the snapshot
-
-  // Per-core Snapshot Cache 
-  std::unordered_map<size_t, umm::UmSV*> um_sv_map_;
 
   // Session specific state 
   InvocationSession *umsesh_{nullptr}; // TODO: remove shared umsesh ptr, make local to invocation 

@@ -22,9 +22,9 @@
 #include "Seuss.h"
 #include "InvocationSession.h"
 
-#define PERF 1
-#define HOT_PATH_PERF 1
-#define WARM_PATH_PERF 1
+#define SEUSS_PERF 0
+#define HOT_PATH_PERF 0
+#define WARM_PATH_PERF 0
 
 namespace seuss {
 
@@ -85,7 +85,6 @@ private:
   std::unordered_map<size_t, umm::UmSV*> um_sv_map_;
 
   // Session specific state 
-  size_t fid_{0};                      // TODO: remove fid_
   InvocationSession *umsesh_{nullptr}; // TODO: remove shared umsesh ptr, make local to invocation 
   uint16_t base_port_;
 

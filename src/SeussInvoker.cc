@@ -314,7 +314,6 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
 }
 
 seuss::InvocationSession* seuss::Invoker::create_session(uint64_t tid, size_t fid) {
-  fid_ = fid;
   // NOTE: old way of stack allocating pcb and istats.
   // ebbrt::NetworkManager::TcpPcb pcb;
   // InvocationStats istats = {0};
@@ -365,7 +364,7 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
   kprintf_force("invoker_core_%d starting invocation: (%u, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
-#if PERF
+#if SEUSS_PERF
   if(! ctr_init[ebbrt::Cpu::GetMine()]){
     ctr_init[ebbrt::Cpu::GetMine()] = true;
     kprintf_force(CYAN "Init CTRS!!!\n" RESET);
@@ -408,7 +407,7 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
   kprintf("invoker_core_%d finished invocation: (%u, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
-#if PERF
+#if SEUSS_PERF
   umm::manager->ctr.stop_all();
   umm::manager->ctr.dump_list();
   umm::manager->ctr.clear_list();

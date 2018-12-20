@@ -116,9 +116,7 @@ void seuss::InvokerRoot::Bootstrap() {
   auto umi = std::make_unique<umm::UmInstance>(sv);
 
   // TODO: move this to header
-  std::string opts_ =
-      R"({"cmdline":"bin/node-default /nodejsActionBase/app.js",
- "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.0","mask":"16", "gw":"169.254.1.0"}})";
+  std::string opts_ = umi_rump_config_;
   kprintf(RED "CONFIG= %s" RESET, opts_.c_str());
 
   uint64_t argc = Solo5BootArguments(sv.GetRegionByName("usr").start,
@@ -126,8 +124,7 @@ void seuss::InvokerRoot::Bootstrap() {
   // Set the IP address
   umi->SetArguments(argc);
   // Load instance and set breakpoint for snapshot creation
-  umm::manager->Load(std::move(umi));
-  ebbrt::Future<umm::UmSV*> snap_f = umm::manager->SetCheckpoint(
+  ebbrt::Future<umm::UmSV*> snap_f = umi->SetCheckpoint(
       umm::ElfLoader::GetSymbolAddress("uv_uptime"));
 
   // Halt the instance after we've taking the snapshot
@@ -143,9 +140,8 @@ void seuss::InvokerRoot::Bootstrap() {
         true);
   }); // End snap_f.Then(...)
   // Kick off the instance
-  umm::manager->runSV();
+  umm::manager->Run(std::move(umi));
   // Return once manager->Halt() is called
-  umm::manager->Unload();
   is_bootstrapped_ = true;
   return;
 }
@@ -160,10 +156,14 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   const std::string args = i.args;
   const std::string code = i.code;
 
-  // TODO: this in each start instead of here?
-  umsesh_ = create_session(tid, fid);
+  auto umsesh = create_session(tid, fid);
 
-  ebbrt::Future<umm::UmSV*> hot_sv_f = umm::manager->SetCheckpoint(
+  /* Load up the base snapshot environment */
+  // kprintf(YELLOW "Loading up base env\n" RESET);
+  auto base_env = root_.GetBaseSV();
+  auto umi = std::make_unique<umm::UmInstance>(*base_env);
+
+  ebbrt::Future<umm::UmSV*> hot_sv_f = umi->SetCheckpoint(
       umm::ElfLoader::GetSymbolAddress("uv_uptime"));
 
   // When you have the sv, cache it for future use.
@@ -172,20 +172,20 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   });
 
   /* Setup the asyncronous operations on the InvocationSession */
-  umsesh_->WhenConnected().Then(
-      [this, code](auto f) {
+  umsesh->WhenConnected().Then(
+      [this, umsesh, code](auto f) {
         // kprintf(YELLOW "Connected, sending init\n" RESET);
-        umsesh_->SendHttpRequest("/init", code, true /* keep_alive */);
+        umsesh->SendHttpRequest("/init", code, true /* keep_alive */);
       });
 
-  umsesh_->WhenInitialized().Then(
-      [this, args](auto f) {
+  umsesh->WhenInitialized().Then(
+      [this, umsesh, args](auto f) {
         // kprintf(YELLOW "Finished function init, sending run args: %s\n" RESET, args.c_str());
-        umsesh_->SendHttpRequest("/run", args, false);
+        umsesh->SendHttpRequest("/run", args, false);
       });
 
   // Halt when closed or aborted
-  umsesh_->WhenClosed().Then([this](auto f) {
+  umsesh->WhenClosed().Then([this](auto f) {
     // kprintf(YELLOW "Connection Closed...\n" RESET);
     ebbrt::event_manager->SpawnLocal(
         [this] {
@@ -194,7 +194,7 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
         /* force async */ true);
   });
 
-  umsesh_->WhenAborted().Then([this](auto f) {
+  umsesh->WhenAborted().Then([this](auto f) {
     kprintf(RED "SESSION ABORTED...\n" RESET);
     ebbrt::event_manager->SpawnLocal(
         [this] {
@@ -205,36 +205,20 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
 
   /* Spawn a new event to make a connection with the instance */
   ebbrt::event_manager->SpawnLocal(
-      [this] {
+      [this, umsesh] {
         // Start a new TCP connection with the http request
         kprintf(YELLOW "Warm start connect \n" RESET);
-        umsesh_->Pcb().Connect(umm::UmInstance::CoreLocalIp(), 8080, base_port_+=ebbrt::Cpu::Count());
+        umsesh->Pcb().Connect(umm::UmInstance::CoreLocalIp(), 8080, base_port_+=ebbrt::Cpu::Count());
       },
       /* force async */ true);
 
-  /* Load up the base snapshot environment */
-  // kprintf(YELLOW "Loading up base env\n" RESET);
-  auto base_env = root_.GetBaseSV();
-  auto umi2 = std::make_unique<umm::UmInstance>(*base_env);
-  umm::manager->Load(std::move(umi2));
   /* Boot the snapshot */
   is_running_ = true;
 
-#if WARM_PATH_PERF
-  auto d = umm::manager->ctr.CreateTimeRecord(std::string("run warm"));
-#endif
-
-  umm::manager->runSV(); // blocks until umm::manager->Halt() is called
-  // printf(RED "Num pg faults during warm start %lu\n" RESET, umm::manager->pg_ft_count);
-
-#if WARM_PATH_PERF
-  umm::manager->ctr.add_to_list(d);
-#endif
+  umm::manager->Run(std::move(umi)); // block until call to manager->Halt() 
 
   /* RETURN HERE AFTER HALT */
-  delete umsesh_;
-  umsesh_ = nullptr;
-  umm::manager->Unload();
+  delete umsesh;
   is_running_ = false;
   kprintf(YELLOW "Finished WARM start \n" RESET);
   return true;
@@ -250,35 +234,33 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
 
   // TODO: this in each start instead of here?
 
-  umsesh_ = create_session(tid, fid);
+  auto umsesh = create_session(tid, fid);
 
   /* Check snapshot cache for function-specific snapshot */
-  kprintf(RED "Searching for fn %d\n" RESET, fid);
   auto cached_snap = root_.GetSnapshot(fid); // um_sv_map_.find(fid);
   if (unlikely(cached_snap == nullptr)) {
     kprintf_force(RED "Error: no snapshot for fid %u\n" RESET, fid);
 		ebbrt::kabort();
   }
-
   kprintf("invoker_core %d: Invocation cache HIT for function #%u\n",
           (size_t)ebbrt::Cpu::GetMine(), fid);
 
   /* Spawn a new event to make a connection with the instance */
   ebbrt::event_manager->SpawnLocal(
-      [this] {
+      [this, umsesh] {
         // Start a new TCP connection with the http request
         kprintf(RED "Hot start connect ...\n" RESET);
-        umsesh_->Pcb().Connect(umm::UmInstance::CoreLocalIp(), 8080, base_port_+=ebbrt::Cpu::Count());
+        umsesh->Pcb().Connect(umm::UmInstance::CoreLocalIp(), 8080, base_port_+=ebbrt::Cpu::Count());
       },
       /* force async */ true);
 
-  umsesh_->WhenConnected().Then(
-      [this, args](auto f) {
+  umsesh->WhenConnected().Then(
+      [this, umsesh, args](auto f) {
         // kprintf(RED "Connection open, sending run...\n" RESET);
-        umsesh_->SendHttpRequest("/run", args, false); });
+        umsesh->SendHttpRequest("/run", args, false); });
 
   // Halt when closed
-  umsesh_->WhenClosed().Then([this](auto f) {
+  umsesh->WhenClosed().Then([this](auto f) {
     // kprintf(GREEN "Connection Closed...\n" RESET);
     ebbrt::event_manager->SpawnLocal(
         [this] {
@@ -286,7 +268,7 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
         },
         /* force async */ true);
   });
-  umsesh_->WhenAborted().Then([this](auto f) {
+  umsesh->WhenAborted().Then([this](auto f) {
     kprintf(RED "SESSION ABORTED...\n" RESET);
     ebbrt::event_manager->SpawnLocal(
         [this] {
@@ -295,43 +277,15 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
         /* force async */ true);
   });
 
-#if HOT_PATH_PERF
-  auto b = umm::manager->ctr.CreateTimeRecord(std::string("create ins"));
-#endif
 
-  auto umi2 = std::make_unique<umm::UmInstance>(*cached_snap);
-
-#if HOT_PATH_PERF
-  umm::manager->ctr.add_to_list(b);
-#endif
-
-
-  umm::manager->Load(std::move(umi2));
+  auto umi = std::make_unique<umm::UmInstance>(*cached_snap);
 
   /* Boot the snapshot */
   is_running_ = true;
 
-#if HOT_PATH_PERF
-  auto d = umm::manager->ctr.CreateTimeRecord(std::string("run"));
-#endif
-  // umm::manager->pg_ft_count = 0;
-  umm::manager->runSV(); // blocks until umm::manager->Halt() is called
-  // printf(RED "Num pg faults during hot start %lu\n" RESET, umm::manager->pg_ft_count);
-#if HOT_PATH_PERF
-  umm::manager->ctr.add_to_list(d);
-#endif
-  /* After instance is halted */
+  umm::manager->Run(std::move(umi)); // blocks until call to manager->Halt()
   /* RETURN HERE AFTER HALT */
-  delete umsesh_;
-  umsesh_ = nullptr;
-
-#if HOT_PATH_PERF
-  auto e = umm::manager->ctr.CreateTimeRecord(std::string("unload"));
-#endif
-  umm::manager->Unload();
-#if HOT_PATH_PERF
-  umm::manager->ctr.add_to_list(e);
-#endif
+  delete umsesh;
   is_running_ = false;
   kprintf(RED "Finished HOT start \n" RESET);
   return true;
@@ -384,58 +338,23 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
 
   // We assume the core does NOT have a running UM instance
   // TODO: verify that umm::manager->Status() == empty
-  kassert(!umsesh_);
   kprintf_force("invoker_core_%d starting invocation: (%u, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
-
-#if SEUSS_PERF
-  if(! ctr_init[ebbrt::Cpu::GetMine()]){
-    ctr_init[ebbrt::Cpu::GetMine()] = true;
-    kprintf_force(CYAN "Init CTRS!!!\n" RESET);
-    // Anything added before this should be dropped.
-    umm::manager->ctr.init_ctrs();
-  }
-  umm::manager->ctr.reset_all();
-  umm::manager->ctr.start_all();
-#endif
 
   /* Check for a snapshot in the cache */
   auto cached_snap = root_.GetSnapshot(fid); // um_sv_map_.find(fid);
   if (cached_snap == nullptr) {
     /* CACHE MISS */
 
-#if WARM_PATH_PERF
-    auto b = umm::manager->ctr.CreateTimeRecord(std::string("WARM TOT"));
-#endif
-
     process_warm_start(i);
-
-#if WARM_PATH_PERF
-    umm::manager->ctr.add_to_list(b);
-#endif
 
   }else{
     /* CACHE HIT */
-#if HOT_PATH_PERF
-    auto b = umm::manager->ctr.CreateTimeRecord(std::string("HOT TOT"));
-#endif
-
     process_hot_start(i);
-
-#if HOT_PATH_PERF
-    umm::manager->ctr.add_to_list(b);
-#endif
-
   }
 
   kprintf("invoker_core_%d finished invocation: (%u, %u)\n",
           (size_t)ebbrt::Cpu::GetMine(), tid, fid);
-
-#if SEUSS_PERF
-  umm::manager->ctr.stop_all();
-  umm::manager->ctr.dump_list();
-  umm::manager->ctr.clear_list();
-#endif
 
   /* Check the shared queue for additional work to be done */
   Invocation next_i;

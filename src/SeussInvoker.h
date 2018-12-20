@@ -22,10 +22,6 @@
 #include "Seuss.h"
 #include "InvocationSession.h"
 
-#define SEUSS_PERF 0
-#define HOT_PATH_PERF 0
-#define WARM_PATH_PERF 0
-
 namespace seuss {
 
 void Init();
@@ -46,6 +42,8 @@ public:
   umm::UmSV* GetSnapshot(size_t id);
   bool SetSnapshot(size_t id, umm::UmSV*);
 private:
+  const std::string umi_rump_config_ =
+      R"({"cmdline":"bin/node-default /nodejsActionBase/app.js", "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.0","mask":"16", "gw":"169.254.1.0"}})";
   umm::UmSV *base_um_env_;
   bool is_bootstrapped_{false}; // Have we created a base snapshot?
   ebbrt::SpinLock qlock_;
@@ -84,9 +82,6 @@ private:
   InvocationSession* create_session(uint64_t tid, size_t fid);
   InvokerRoot& root_;
   bool is_running_{false};      // Have we booted the snapshot
-
-  // Session specific state 
-  InvocationSession *umsesh_{nullptr}; // TODO: remove shared umsesh ptr, make local to invocation 
   uint16_t base_port_;
 
   // Arg code pair
@@ -95,9 +90,6 @@ private:
   std::unordered_map<uint64_t, invocation_request> request_map_;
   // Queue requests by tid
   std::queue<uint64_t> request_queue_;
-  //umm::UmSV *base_um_env_;
-  //const std::string umi_config_ = R"({"cmdline":"bin/node-default /nodejsActionBase/app.js", "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.1","mask":"16"}})";
-
 };
 
 constexpr auto invoker = ebbrt::EbbRef<Invoker>(Invoker::global_id);

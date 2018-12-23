@@ -108,8 +108,7 @@ void openwhisk::test() {
 
           bench b(benchmark_config);
           b.dump_bench();
-
-          if(!b.vecGood()){
+          if (!b.vecGood()) {
             continue;
           }
 

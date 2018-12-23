@@ -77,15 +77,20 @@ public:
 
   bench(string str) : runs(1), fns(1), parallel(1), sleep(0) {
     // Assume input str "runs users fns parallel" as decimal ints.
-    ints = str_to_int_vec(str, ' ');
-    if (ints.size() > 0)
-      runs = ints[0];
-    if (ints.size() > 1)
-      fns = ints[1];
-    if (ints.size() > 2)
-      parallel = ints[2];
-    if (ints.size() > 3)
-      sleep = ints[3];
+    try {
+      ints = str_to_int_vec(str, ' ');
+      if (ints.size() > 0)
+        runs = ints[0];
+      if (ints.size() > 1)
+        fns = ints[1];
+      if (ints.size() > 2)
+        parallel = ints[2];
+      if (ints.size() > 3)
+        sleep = ints[3];
+    } catch (...) {
+      cout << "Input parsing error..." << endl;
+      runs = 0;
+    }
   }
 
   bool vecGood() {

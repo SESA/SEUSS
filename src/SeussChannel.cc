@@ -125,7 +125,7 @@ void seuss::SeussChannel::ReceiveMessage(ebbrt::Messenger::NetworkId nid,
   switch (hdr.type) {
 #ifdef __ebbrt__ /* Native (EbbRT) */
   case MsgType::ping:
-    kprintf_force("SeussChannel - ping!\n");
+    kprintf("SeussChannel - Ping!\n");
     break;
   case MsgType::request:
     /* Call the invoker to spawn the action */

@@ -19,7 +19,7 @@ void seuss::InvocationSession::Connected() {
 }
 
 void seuss::InvocationSession::Close() {
-  kprintf("InvocationSession closed!\n");
+//  kprintf("InvocationSession closed!\n");
   is_connected_ = false;
   
     Pcb().Disconnect();
@@ -30,14 +30,14 @@ void seuss::InvocationSession::Close() {
 }
 
 void seuss::InvocationSession::Abort() {
-  kprintf_force("InvocationSession aborted!\n");
+  //kprintf_force("InvocationSession aborted!\n");
   is_connected_ = false;
   // Trigger 'WhenAborted().Then()' logic on a new event context
   ebbrt::event_manager->SpawnLocal([this]() { when_aborted_.SetValue(); });
 }
 
 void seuss::InvocationSession::Finish(std::string response) {
-  kprintf("InvocationSession finished!\n");
+  //kprintf("InvocationSession finished!\n");
   // Force disconnect of the TCP connection
   seuss::invoker->Resolve(istats_, response);
 }

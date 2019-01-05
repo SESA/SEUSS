@@ -70,6 +70,8 @@ public:
   void Invoke(Invocation i);
   /* Add request to work queue but do no work */
   void Queue(Invocation i);
+  /* Initialize invoker on this core*/
+  void Init();
   /* Wake core up, there's work to do! */
   void Poke();
   // TODO: Remove method and do resolution within Invoke(...)

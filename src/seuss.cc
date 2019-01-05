@@ -18,10 +18,10 @@
 
 void AppMain() {
   // TODO: Block until the ZKGidMap is online
-  ebbrt::event_manager->Spawn([]() {
+  ebbrt::event_manager->SpawnLocal([]() {
     ebbrt::dsys::Init();
     seuss::Init();
-  });
+  }, true);
 }
 
 #else // ###### HOSTED (linux) ######

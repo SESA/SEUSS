@@ -24,6 +24,8 @@
 
 namespace seuss {
 
+const uint8_t request_concurrency_limit = 8;
+
 void Init();
 
 class Invoker;
@@ -65,7 +67,10 @@ private:
 class Invoker : public ebbrt::MulticoreEbb<Invoker, InvokerRoot> {
 public:
   static const ebbrt::EbbId global_id = ebbrt::GenerateStaticEbbId("Invoker");
-  explicit Invoker(const InvokerRoot& root) : root_(const_cast<InvokerRoot&>(root)){ base_port_ = 49160 + (size_t)ebbrt::Cpu::GetMine(); };
+  explicit Invoker(const InvokerRoot &root)
+      : root_(const_cast<InvokerRoot &>(root)), request_concurrency_(0) {
+    base_port_ = 49160 + (size_t)ebbrt::Cpu::GetMine();
+  };
   /* Invoke code on an uninitialized instance */
   void Invoke(Invocation i);
   /* Add request to work queue but do no work */
@@ -85,9 +90,11 @@ private:
   InvokerRoot& root_;
   bool is_running_{false};      // Have we booted the snapshot
   uint16_t base_port_;
+  std::atomic<std::int8_t> request_concurrency_;
 
-  // Arg code pair
-  typedef std::tuple<size_t, std::string, std::string> invocation_request;
+      // Arg code pair
+      typedef std::tuple<size_t, std::string, std::string>
+          invocation_request;
   // map tid to (arg, code) pairs.
   std::unordered_map<uint64_t, invocation_request> request_map_;
   // Queue requests by tid

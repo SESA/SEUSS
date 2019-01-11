@@ -110,7 +110,6 @@ void seuss::Controller::ResolveActivation(seuss::InvocationStats istats, std::st
   auto it = record_map_.find(tid);
   if(it == record_map_.end()){
     cout << "ERROR: NO RECORD FOUND FOR tid=" << tid << endl;
-    abort();
   }
   auto record_tuple = std::move(it->second);
   openwhisk::msg::CompletionMessage cm(std::get<1>(record_tuple));

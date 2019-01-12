@@ -16,7 +16,7 @@ openwhisk::msg::CompletionMessage::CompletionMessage( openwhisk::msg::Activation
   invoker_ = am.rootControllerIndex_; 
   response_.activationId_ = am.activationId_;
   response_.name_ = am.action_.name_;
-  response_.namespace_ = am.user_.namespace_;
+  response_.namespace_ = am.user_.namespace_.name_;
   response_.subject_ = am.user_.subject_;
   response_.version_ = am.action_.version_;
 }
@@ -33,7 +33,8 @@ openwhisk::msg::ActivationMessage::ActivationMessage( string json ){
   const char *inst_path_2[] = {"rootControllerIndex", "name", (const char *)0};
   const char *user_path_1[] = {"user", "subject", (const char *)0};
   const char *user_path_2[] = {"user", "authkey", (const char *)0};
-  const char *user_path_3[] = {"user", "namespace", (const char *)0};
+  const char *user_path_3[] = {"user", "namespace", "name", (const char *)0};
+  const char *user_path_4[] = {"user", "namespace", "uuid", (const char *)0};
   char errbuf[1024];
   yajl_val yv;
 
@@ -114,10 +115,14 @@ openwhisk::msg::ActivationMessage::ActivationMessage( string json ){
   yv = yajl_tree_get(yajl_node, user_path_2, yajl_t_string);
   if (yv)
     user_.authkey_ = YAJL_GET_STRING(yv);
-	// action/version 
+  // user namespace.name
   yv = yajl_tree_get(yajl_node, user_path_3, yajl_t_string);
   if (yv)
-    user_.namespace_ = YAJL_GET_STRING(yv);
+    user_.namespace_.name_ = YAJL_GET_STRING(yv);
+  // user namespace.uuid
+  yv = yajl_tree_get(yajl_node, user_path_4, yajl_t_string);
+  if (yv)
+    user_.namespace_.uuid_ = YAJL_GET_STRING(yv);
   // Clean up and return
   yajl_tree_free(yajl_node);
 }

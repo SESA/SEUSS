@@ -39,15 +39,24 @@ struct Action {
   };
 };
 
+struct Namespace {
+  std::string name_;
+  std::string uuid_;
+  std::string to_json() const {
+    return "{\"name\":\"" + name_ + "\",\"uuid\":\"" + uuid_ + "\"}";
+  };
+};
+
 struct User {
   std::string subject_;
   std::string authkey_;
-  std::string namespace_;
+  Namespace namespace_;
   std::string to_json() const {
     return "{\"subject\":\"" + subject_ + "\",\"authkey\":\"" + authkey_ +
-           "\",\"namespace\":\"" + namespace_ + "\"}";
+           "\",\"namespace\":" + namespace_.to_json() + "}";
   };
 };
+
 
 /** Classes */
 

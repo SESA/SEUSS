@@ -44,7 +44,7 @@ void seuss::Init(){
   }
 
   invoker_root->Bootstrap();
-  kprintf_force(GREEN "\nFinished initialization of Seuss Invoker \n" RESET);
+  kprintf_force(GREEN "\nFinished initialization of Seuss Invoker (*)\n" RESET);
 }
 
 /* class seuss::InvokerRoot */
@@ -243,7 +243,8 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
       [this, umsesh] {
         // Start a new TCP connection with the http request
         //kprintf(YELLOW "Warm start connect \n" RESET);
-        umsesh->Pcb().Connect(umm::UmInstance::CoreLocalIp(), 8080, base_port_+=ebbrt::Cpu::Count());
+				auto port = get_internal_port();
+        umsesh->Pcb().Connect(umm::UmInstance::CoreLocalIp(), 8080, port);
       },
       /* force async */ true);
 
@@ -317,7 +318,8 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
       [this, umsesh] {
         // Start a new TCP connection with the http request
         //kprintf(RED "Hot start connect \n" RESET);
-        umsesh->Pcb().Connect(umm::UmInstance::CoreLocalIp(), 8080, base_port_+=ebbrt::Cpu::Count());
+				auto port = get_internal_port();
+        umsesh->Pcb().Connect(umm::UmInstance::CoreLocalIp(), 8080, port);
       },
       /* force async */ true);
 

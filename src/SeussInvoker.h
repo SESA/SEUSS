@@ -68,9 +68,12 @@ class Invoker : public ebbrt::MulticoreEbb<Invoker, InvokerRoot> {
 public:
   static const ebbrt::EbbId global_id = ebbrt::GenerateStaticEbbId("Invoker");
   explicit Invoker(const InvokerRoot &root)
-      : root_(const_cast<InvokerRoot &>(root)), request_concurrency_(0) {
-    base_port_ = 49160 + (size_t)ebbrt::Cpu::GetMine();
+      : root_(const_cast<InvokerRoot &>(root)), base_port_(49160),
+        port_(0),
+        request_concurrency_(0) {
+    port_range_ = ((1 << 16) - base_port_ - 1);
   };
+
   /* Invoke code on an uninitialized instance */
   void Invoke(Invocation i);
   /* Add request to work queue but do no work */
@@ -89,12 +92,17 @@ private:
   InvocationSession* create_session(uint64_t tid, size_t fid);
   InvokerRoot& root_;
   bool is_running_{false};      // Have we booted the snapshot
-  uint16_t base_port_;
-  std::atomic<std::int8_t> request_concurrency_;
-
-      // Arg code pair
-      typedef std::tuple<size_t, std::string, std::string>
-          invocation_request;
+  const uint16_t base_port_;
+  uint16_t port_range_; // port should be between base_port_ and MAX_UINT_16
+  std::atomic<std::uint16_t> port_;
+  std::atomic<std::uint8_t> request_concurrency_;
+  uint16_t get_internal_port() {
+    port_ += ebbrt::Cpu::Count();
+    size_t port_offset = (size_t)ebbrt::Cpu::GetMine();
+    return  base_port_ + ((port_ + port_offset) % port_range_);
+  }
+  // Arg code pair
+  typedef std::tuple<size_t, std::string, std::string> invocation_request;
   // map tid to (arg, code) pairs.
   std::unordered_map<uint64_t, invocation_request> request_map_;
   // Queue requests by tid

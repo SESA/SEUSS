@@ -16,9 +16,10 @@ struct ExecStats {
 
 /** Function activation record */
 struct InvocationStats {
-  size_t transaction_id;
-  size_t function_id;
+  size_t transaction_id; // unique id for invocation
+  size_t function_id;  
   size_t args_size;
+  char activation_id[34] = {0};
   ExecStats exec;
 };
 

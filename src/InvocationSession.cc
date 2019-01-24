@@ -9,36 +9,27 @@
 #define kprintf ebbrt::kprintf
 using ebbrt::kprintf_force;
 
-/* class seuss::InvocationSession */
+/* seuss::InvocationSession */
 
 void seuss::InvocationSession::Connected() {
-    // We've established a connection with the instance
-    is_connected_ = true;
-    // Trigger 'WhenConnected().Then()' logic on a new event context
-    ebbrt::event_manager->SpawnLocal([this]() { when_connected_.SetValue(); });
+  // We've established a connection with the instance
+  is_connected_ = true;
+  ebbrt::event_manager->SpawnLocal([this]() { when_connected_.SetValue(); });
 }
 
 void seuss::InvocationSession::Close() {
-//  kprintf("InvocationSession closed!\n");
   is_connected_ = false;
-  
-    Pcb().Disconnect();
-  // Trigger 'WhenClosed().Then()' logic on a new event context
-  ebbrt::event_manager->SpawnLocal([this]() {
-    when_closed_.SetValue();
-  });
+  Pcb().Disconnect();
+  ebbrt::event_manager->SpawnLocal([this]() { when_closed_.SetValue(); });
 }
 
 void seuss::InvocationSession::Abort() {
-  //kprintf_force("InvocationSession aborted!\n");
   is_connected_ = false;
-  // Trigger 'WhenAborted().Then()' logic on a new event context
   ebbrt::event_manager->SpawnLocal([this]() { when_aborted_.SetValue(); });
 }
 
 void seuss::InvocationSession::Finish(std::string response) {
-  //kprintf("InvocationSession finished!\n");
-  // Force disconnect of the TCP connection
+  //ebbrt::event_manager->SpawnLocal([this]() { when_finished_.SetValue(); });
   seuss::invoker->Resolve(istats_, response);
 }
 
@@ -112,9 +103,6 @@ void seuss::InvocationSession::SendHttpRequest(std::string path,
   auto str_ptr = reinterpret_cast<char *>(dp.Data());
   msg.copy(str_ptr, msg.size());
   command_clock_ = ebbrt::clock::Wall::Now();
-#ifndef NDEBUG /// DEBUG OUTPUT
-  std::cout << msg << std::endl;
-#endif
   Send(std::move(buf));
 }
 
@@ -123,13 +111,13 @@ void seuss::InvocationSession::reset_pcb_internal(){
   *pcb = ebbrt::NetworkManager::TcpPcb();
 }
 
-std::string seuss::InvocationSession::http_post_request(std::string path,
-                                                        std::string msg, bool keep_alive=false) {
+std::string
+seuss::InvocationSession::http_post_request(std::string path, std::string msg,
+                                            bool keep_alive = false) {
+  // construct json payload formatted for the OpenWhisk ActonRunner
   std::ostringstream payload;
   std::ostringstream ret;
 
-  // construct json payload formatted for OpenWhisk ActonRunner
-  // TODO: avoid locking operation
   msg.erase(std::remove(msg.begin(), msg.end(), '\n'), msg.end());
   payload << "{\"value\": ";
   if (path == "/init") {
@@ -137,7 +125,6 @@ std::string seuss::InvocationSession::http_post_request(std::string path,
   } else {
     payload << msg << "}";
   }
-
   // build http message header + body
   auto body = payload.str();
   // TODO: avoid locking operation
@@ -145,8 +132,7 @@ std::string seuss::InvocationSession::http_post_request(std::string path,
       << "Content-Type: application/json\r\n";
   if (keep_alive)
     ret << "Connection: keep-alive\r\n";
-  ret << "content-length: " << body.size() << "\r\n\r\n"
-      << body;
+  ret << "content-length: " << body.size() << "\r\n\r\n" << body;
   std::string return_val = ret.str();
   previous_request_ = return_val;
   return return_val;

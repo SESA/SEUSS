@@ -44,7 +44,7 @@ void seuss::Init(){
   }
 
   invoker_root->Bootstrap();
-  kprintf_force(GREEN "\nFinished initialization of Seuss Invoker (*)\n" RESET);
+  kprintf_force(GREEN "\nFinished initialization of Seuss Invoker (^)\n" RESET);
 }
 
 /* class seuss::InvokerRoot */
@@ -108,7 +108,7 @@ bool seuss::InvokerRoot::SetSnapshot(size_t fid, umm::UmSV* sv) {
   auto cache_result = snapmap_.find(fid);
   if (cache_result != snapmap_.end()) {
     /* CACHE HIT */
-    kprintf_force(RED "Wasted Snapshot for fid #%u\n" RESET, fid);
+    kprintf(RED "Wasted Snapshot for fid #%u\n" RESET, fid);
     delete sv;
     return false;
   }
@@ -119,7 +119,7 @@ bool seuss::InvokerRoot::SetSnapshot(size_t fid, umm::UmSV* sv) {
         snapmap_.emplace(fid, sv);
     // Assert there was no collision on the key
     assert(inserted);
-    kprintf_force(YELLOW "Snapshot created for fid #%u\n" RESET, fid);
+    kprintf(YELLOW "Snapshot created for fid #%u\n" RESET, fid);
   }
   return true;
 }
@@ -183,27 +183,29 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   // kprintf(YELLOW "Processing WARM start \n" RESET);
   uint64_t tid = i.info.transaction_id;
   size_t fid = i.info.function_id;
+  const std::string aid  = i.info.activation_id;
   const std::string args = i.args;
   const std::string code = i.code;
-
 
   /* Load up the base snapshot environment */
   // kprintf(YELLOW "Loading up base env\n" RESET);
   auto base_env = root_.GetBaseSV();
   auto umi = std::make_unique<umm::UmInstance>(*base_env);
+  auto umi_id = umi->Id();
+  kprintf_force("C(%d): warm start %s, %u, %u\n",
+          (size_t)ebbrt::Cpu::GetMine(), aid.c_str(), fid, umi_id);
 
+  /* Snapshotting */
   ebbrt::Future<umm::UmSV*> hot_sv_f = umi->SetCheckpoint(
       umm::ElfLoader::GetSymbolAddress("uv_uptime"));
-
   // When you have the sv, cache it for future use.
   hot_sv_f.Then([this, fid](ebbrt::Future<umm::UmSV *> f) {
     root_.SetSnapshot(fid, std::move(f.Get()));
   });
 
-  auto umi_id = umi->Id();
   auto umsesh = create_session(tid, fid);
 
-  /* Setup the asyncronous operations on the InvocationSession */
+  /* Setup the operation handlers of the InvocationSession */
   umsesh->WhenConnected().Then(
       [this, umsesh, code](auto f) {
         // kprintf(YELLOW "Connected, sending init\n" RESET);
@@ -213,7 +215,7 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   umsesh->WhenInitialized().Then(
       [this, umsesh, args](auto f) {
         // kprintf(YELLOW "Finished function init, sending run args: %s\n" RESET, args.c_str());
-        umsesh->SendHttpRequest("/run", args, false);
+        umsesh->SendHttpRequest("/run", args, false /* keep_alive */);
       });
 
   // Halt when closed or aborted
@@ -265,11 +267,9 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
   // kprintf(RED "Processing HOT start \n" RESET);
   uint64_t tid = i.info.transaction_id;
   size_t fid = i.info.function_id;
+  const std::string aid  = i.info.activation_id;
   const std::string args = i.args;
   const std::string code = i.code;
-
-  // TODO: this in each start instead of here?
-
 
   /* Check snapshot cache for function-specific snapshot */
   auto cached_snap = root_.GetSnapshot(fid); // um_sv_map_.find(fid);
@@ -277,13 +277,14 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
     kprintf_force(RED "Error: no snapshot for fid %u\n" RESET, fid);
 		ebbrt::kabort();
   }
-  //kprintf("invoker_core %d: Invocation cache HIT for function #%u\n",
-  //        (size_t)ebbrt::Cpu::GetMine(), fid);
-
-  auto umsesh = create_session(tid, fid);
   auto umi = std::make_unique<umm::UmInstance>(*cached_snap);
   auto umi_id = umi->Id();
+  kprintf_force("C(%d): hot start %s, %u, %u\n",
+          (size_t)ebbrt::Cpu::GetMine(), aid.c_str(), fid, umi_id);
 
+  auto umsesh = create_session(tid, fid);
+
+  /* Setup the operation handlers of the InvocationSession */
   umsesh->WhenConnected().Then(
       [this, umsesh, args](auto f) {
         // kprintf(RED "Connection open, sending run...\n" RESET);
@@ -366,7 +367,6 @@ void seuss::Invoker::Poke(){
 
 bool ctr_init[] = {false, false, false};
 void seuss::Invoker::Invoke(seuss::Invocation i) {
-  uint64_t tid = i.info.transaction_id;
   size_t fid = i.info.function_id;
   const std::string args = i.args;
   const std::string code = i.code;
@@ -374,9 +374,6 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
 
   //kprintf("invoker_core_%d received invocation: (%u, %u)\n CODE: %s\n ARGS: %s\n",
   //        (size_t)ebbrt::Cpu::GetMine(), tid, fid, code.c_str(), args.c_str());
-
-  kprintf_force("C(%d): start invocation tid=%u, fid=%u\n",
-          (size_t)ebbrt::Cpu::GetMine(), tid, fid);
 
   /* Check for a snapshot in the cache */
   auto cached_snap = root_.GetSnapshot(fid); // um_sv_map_.find(fid);
@@ -407,7 +404,6 @@ void seuss::Invoker::Init() {
   // Pre-allocate event stacks
   ebbrt::event_manager->PreAllocateStacks(256);
   kprintf("invoker_core_%d is online\n", (size_t)ebbrt::Cpu::GetMine());
-	// Could call umm::manager->slot_has_instance
 }
 
 void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {

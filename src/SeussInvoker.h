@@ -24,7 +24,7 @@
 
 namespace seuss {
 
-const uint8_t request_concurrency_limit = 8;
+const uint8_t request_concurrency_limit = 12; // 15*12=180
 
 void Init();
 

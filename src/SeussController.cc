@@ -47,13 +47,18 @@ seuss::Controller::ScheduleActivation(
 
   auto start = std::chrono::high_resolution_clock::now();
 
-  // TODO: cache the code locally?
   if(code.empty())
     code = openwhisk::couchdb::get_action(am.action_);
 
-  auto args = am.content_;
   uint64_t tid = std::hash<std::string>{}(am.transid_.name_); // OpenWhisk transaction id (unique)
   size_t fid = std::hash<std::string>{}(am.revision_);
+
+  auto args = am.content_;
+  InvocationStats stats;
+  stats.transaction_id = tid;
+  stats.function_id = fid;
+  stats.args_size = args.size();
+  std::copy(am.activationId_.begin(), am.activationId_.begin()+33, stats.activation_id);
 
   //std::cout << "CONTROLLER: scheduling activation on core #"
   //          << (size_t)ebbrt::Cpu::GetMine() 
@@ -85,15 +90,15 @@ seuss::Controller::ScheduleActivation(
 
   /* Schedule this activation on a back-end node */
   kassert(!_nids.empty()); // verify we have a backend node
-  // XXX: Safety checks, what is the state of the backed?
+  // TODO: Safety check. Is the backend ready for requests?
   // XXX: Always grab the first node from the list (SINGLE BACKEND)
   auto nid = _nids.front();
 
   /* Send the event via IO thread for this backend node */
   auto nid_io_cpu = _frontEnd_cpus_map[nid.ToString()];
   ebbrt::event_manager->SpawnRemote(
-      [this, nid, tid, fid, code, args]() {
-        seuss_channel->SendRequest(nid, tid, fid, args, code);
+      [this, nid, stats, code, args]() {
+        seuss_channel->SendRequest(nid, stats, args, code);
       },
       ebbrt::Cpu::GetByIndex(nid_io_cpu)->get_context());
 

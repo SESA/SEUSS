@@ -53,8 +53,7 @@ void seuss::SeussChannel::SendReply(ebbrt::Messenger::NetworkId nid, InvocationS
   SendMessage(nid, std::move(buf));
 }
 
-void seuss::SeussChannel::SendRequest(ebbrt::Messenger::NetworkId nid, uint64_t tid,
-                               size_t fid, std::string args, std::string code) {
+void seuss::SeussChannel::SendRequest(ebbrt::Messenger::NetworkId nid, InvocationStats istats, std::string args, std::string code) {
   // New IOBuf for the outgoing message
   auto buf =
       MakeUniqueIOBuf(sizeof(MsgHeader) + args.size() + code.size());
@@ -62,10 +61,8 @@ void seuss::SeussChannel::SendRequest(ebbrt::Messenger::NetworkId nid, uint64_t 
   // Complete the message header
   auto &hdr = dp.Get<MsgHeader>();
   hdr.type = MsgType::request;
-  hdr.record.transaction_id = tid; 
-  hdr.record.function_id = fid; 
-  hdr.record.args_size = args.size();
-  // Copy in msg payload
+  hdr.record = istats; 
+  // Copy in msg payloads
   hdr.len = args.size() + code.size();
   auto str_ptr = reinterpret_cast<char *>(dp.Data());
   if (args.size() > 0) {

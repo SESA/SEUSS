@@ -10,6 +10,10 @@ uint16_t ebbrt::dsys::native_instance_count;
 uint16_t ebbrt::dsys::native_core_count;
 uint16_t ebbrt::dsys::native_numa_count;
 uint16_t ebbrt::dsys::native_memory_gb;
+// Seuss Invoker configuration 
+uint16_t ebbrt::dsys::native_invoker_core_concurrency_limit;
+uint16_t ebbrt::dsys::native_invoker_core_spicy_limit;
+uint16_t ebbrt::dsys::native_invoker_core_spicy_reuse;
 bool ebbrt::dsys::local_init;
 
 void ebbrt::dsys::Init(){
@@ -29,6 +33,12 @@ void ebbrt::dsys::Init(){
 
 #ifndef __ebbrt__
 po::options_description ebbrt::dsys::program_options() {
+
+  po::options_description po("Invoker configuration (native)");
+  po.add_options()("concurrency-limit,C", po::value<uint16_t>(&native_invoker_core_concurrency_limit)->default_value(12), "Max amount of blocked requests to maintain per core");
+  po.add_options()("spicy-limit,S", po::value<uint16_t>(&native_invoker_core_spicy_limit)->default_value(0), "Number of idle instances to maintain per core (spicy starts)");
+  po.add_options()("reuse-limit,R", po::value<uint16_t>(&native_invoker_core_spicy_reuse)->default_value(300), "Number of times to reuse an active instance (for S>0)");
+
   po::options_description options("EbbRT configuration");
   options.add_options()("natives,n", po::value<uint16_t>(&native_instance_count)->default_value(1),
                         "native instance count");
@@ -42,7 +52,7 @@ po::options_description ebbrt::dsys::program_options() {
                         "native binary path");
   options.add_options()("zookeeper,z", po::value<std::string>(),
                         "Zookeeper Hosts");
-  return options;
+  return options.add(po);
 } 
 
 bool ebbrt::dsys::process_program_options(po::variables_map &vm){

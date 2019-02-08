@@ -38,6 +38,13 @@ ebbrt::dsys::Controller::AllocateNativeInstances(std::string binary_path) {
   // Set minimum of 1 cpu per NUMA node 
   if(args.cpus < (args.numa))
       args.numa = (args.cpus);
+
+  // Set CmdArgs for the InvokerCore Ebb
+  ebbrt::node_allocator->AppendArgs("Clim=" + std::to_string(native_invoker_core_concurrency_limit));
+  ebbrt::node_allocator->AppendArgs("Slim=" + std::to_string(native_invoker_core_spicy_limit));
+  if(native_invoker_core_spicy_limit && native_invoker_core_spicy_reuse)
+    ebbrt::node_allocator->AppendArgs("Rlim=" + std::to_string(native_invoker_core_spicy_reuse));
+
   auto node_desc = ebbrt::node_allocator->AllocateNode(binary_path, args);
   node_desc.NetworkId().Then([START_TIME](
       ebbrt::Future<ebbrt::Messenger::NetworkId> f) {

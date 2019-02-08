@@ -44,7 +44,8 @@ void seuss::Init(){
   }
 
   invoker_root->Bootstrap();
-  kprintf_force(GREEN "\nFinished initialization of Seuss Invoker (^)\n" RESET);
+  kprintf_force(GREEN "\nFinished initialization of " RESET);
+  kprintf_force(GREEN "Seuss Invoker (*)\n" RESET);
 }
 
 /* class seuss::InvokerRoot */
@@ -83,9 +84,6 @@ bool seuss::InvokerRoot::GetWork(Invocation& i) {
   assert(req != request_map_.end());
   i = req->second;
   request_map_.erase(tid);
-  // Invoke the function
-  // kprintf("Core %u: Pulling request #%lu from queue (qlen=%d)\n",
-          // (size_t)ebbrt::Cpu::GetMine(), i.info.transaction_id, request_queue_.size());
   return true;
 }
 
@@ -176,7 +174,119 @@ void seuss::InvokerRoot::Bootstrap() {
   return;
 }
 
-/* class seuss::Invoker */
+/* End seuss::InvokerRoot */
+
+/* Start seuss::Invoker */
+
+void seuss::Invoker::Init() {
+  // Pre-allocate event stacks
+  ebbrt::event_manager->PreAllocateStacks(256);
+
+  // args from the multiboot command line
+  auto cl = std::string(ebbrt::multiboot::CmdLine());
+
+  // invoker core concurrency_limit
+  {
+    auto zkstr = std::string("Clim=");
+    auto loc = cl.find(zkstr);
+    if (loc == std::string::npos) {
+      request_concurrency_limit_ = default_concurrency_limit;
+    } else {
+      auto clim_str = cl.substr((loc + zkstr.size()));
+      auto gap = clim_str.find(";");
+      if (gap != std::string::npos) {
+        clim_str = clim_str.substr(0, gap);
+      }
+      request_concurrency_limit_ = atoi(clim_str.c_str());
+    }
+    kprintf("invoker_core_%d concurrency limit: %d\n",
+            (size_t)ebbrt::Cpu::GetMine(), request_concurrency_limit_);
+  }
+  // invoker core spicy start limit
+  {
+    auto zkstr = std::string("Slim=");
+    auto loc = cl.find(zkstr);
+    if (loc == std::string::npos) {
+      spicy_limit_ = 0;
+      spicy_reuse_limit_ = 0;
+    }else{
+      auto clim_str = cl.substr((loc + zkstr.size()));
+      auto gap = clim_str.find(";");
+      if (gap != std::string::npos) {
+        clim_str = clim_str.substr(0, gap);
+      }
+      spicy_limit_ = atoi(clim_str.c_str());
+      // check for reuse
+      zkstr = std::string("Rlim=");
+      loc = cl.find(zkstr);
+      if (loc == std::string::npos) {
+        spicy_reuse_limit_ = default_instance_reuse_limit;
+      }else{
+        auto rlim_str = cl.substr((loc + zkstr.size()));
+        auto gap = rlim_str.find(";");
+        if (gap != std::string::npos) {
+          rlim_str = rlim_str.substr(0, gap);
+        }
+        spicy_reuse_limit_ = atoi(rlim_str.c_str());
+      }
+      kprintf("invoker_core_%d spicy hot limits: %d active instances / %d reuses\n",
+              (size_t)ebbrt::Cpu::GetMine(), spicy_limit_, spicy_reuse_limit_);
+    }
+  }
+  kprintf("invoker_core_%d is online\n", (size_t)ebbrt::Cpu::GetMine());
+}
+
+void seuss::Invoker::Queue(seuss::Invocation i) {
+  root_.AddWork(i);
+  return;
+}
+
+// Poke() is the stupid/arbitrary way we schedule functions deployments
+void seuss::Invoker::Poke(){
+  Invocation i;
+  if (spicy_is_enabled()) {
+    // Proceed only if core is doing no work
+    if (request_concurrency_ == 0) {
+      if (root_.GetWork(i)) {
+        Invoke(i);
+      }
+    }
+    return;
+  }
+  // Proceed only if we have capacity on this core to do so
+  if (request_concurrency_ >= request_concurrency_limit_) {
+    return;
+  }
+  if (root_.GetWork(i)) {
+    Invoke(i);
+  }
+}
+
+void seuss::Invoker::Invoke(seuss::Invocation i) {
+  size_t fid = i.info.function_id;
+  const std::string args = i.args;
+  const std::string code = i.code;
+  ++request_concurrency_;
+
+
+  /* Check for a snapshot in the cache */
+  auto cached_snap = root_.GetSnapshot(fid); 
+  if (cached_snap == nullptr) {
+    /* snapshot cache miss */
+    process_warm_start(i);
+  } else if (spicy_is_enabled() && check_ready_instance(fid)) {
+    process_spicy_start(i);
+    return;
+  } else {
+    /* snapshot cache hit */
+    process_hot_start(i);
+  }
+}
+
+void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {
+  seuss_channel->SendReply(
+      ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), istats, ret);
+}
 
 bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
 
@@ -203,7 +313,7 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
     root_.SetSnapshot(fid, std::move(f.Get()));
   });
 
-  auto umsesh = create_session(tid, fid);
+  auto umsesh = create_session(i.info);
 
   /* Setup the operation handlers of the InvocationSession */
   umsesh->WhenConnected().Then(
@@ -219,70 +329,76 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
       });
 
   // Halt when closed or aborted
-  umsesh->WhenClosed().Then([this, umi_id](auto f) {
-    // kprintf(YELLOW "Connection Closed...\n" RESET);
+  umsesh->WhenClosed().Then([this, umi_id, fid](auto f) {
+    this->request_concurrency_--;
+    ebbrt::event_manager->SpawnLocal([this]() { this->Poke(); }, true);
+    if (this->spicy_is_enabled()) {
+      /* To enable magma hot starts we need to keep this instance booted */
+      if (!(this->check_ready_instance(fid)) &&
+          this->instance_can_be_reused(umi_id)) {
+        /* No existing instance exists for this function on this core*/
+        auto umi = umm::manager->GetInstance(umi_id);
+        kassert(umi);
+        umi->EnableYield();
+        this->save_ready_instance(fid, umi_id);
+        umm::manager->SignalYield(umi_id);
+        return;
+      }
+    }
+    // Otherwise continue and halt the instance 
     ebbrt::event_manager->SpawnLocal(
-        [this, umi_id] {
-          //kprintf(YELLOW "Connection Closed...\n" RESET);
-          umm::manager->SignalHalt(umi_id); /* Return to back to init_code_and_snap */
-        },
+        [this, umi_id] { umm::manager->SignalHalt(umi_id); },
         /* force async */ true);
+
   });
 
   umsesh->WhenAborted().Then([this, umi_id](auto f) {
     ebbrt::event_manager->SpawnLocal(
-        [this, umi_id] {
-          kprintf(RED "SESSION ABORTED...\n" RESET);
-          umm::manager->SignalHalt(umi_id); /* Return to back to init_code_and_snap */
-        },
+        [this, umi_id] { umm::manager->SignalHalt(umi_id); },
         /* force async */ true);
   });
 
-  umm::manager->Load(std::move(umi)).Block(); // block until core is loaded 
+  umm::manager->Load(std::move(umi)).Block(); // block until core is loaded
 
   /* Spawn a new event to make a connection with the instance */
   ebbrt::event_manager->SpawnLocal(
       [this, umsesh] {
         // Start a new TCP connection with the http request
-        //kprintf(YELLOW "Warm start connect \n" RESET);
-				auto port = get_internal_port();
-        umsesh->Pcb().Connect(umm::UmInstance::CoreLocalIp(), 8080, port);
+        kprintf(YELLOW "Warm start connect \n" RESET);
+        umsesh->Connect();
       },
       /* force async */ true);
 
   /* Boot the snapshot */
-  is_running_ = true;
-
-  // umm::manager->Run(std::move(umi));
-  umm::manager->Start(umi_id);// block until call to manager->Halt() 
+  umm::manager->Start(umi_id); // block until call to manager->Halt()
   /* RETURN HERE AFTER HALT */
   delete umsesh;
-  is_running_ = false;
-  //kprintf(YELLOW "Finished WARM start \n" RESET);
-  return true;
+   kprintf(YELLOW "C(%d): warm start finished %s, %u, %u\n" RESET,
+                 (size_t)ebbrt::Cpu::GetMine(), aid.c_str(), fid, umi_id);
+   return true;
 }
 
 bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
 
-  // kprintf(RED "Processing HOT start \n" RESET);
-  uint64_t tid = i.info.transaction_id;
-  size_t fid = i.info.function_id;
-  const std::string aid  = i.info.activation_id;
-  const std::string args = i.args;
-  const std::string code = i.code;
+    uint64_t tid = i.info.transaction_id;
+    size_t fid = i.info.function_id;
+    const std::string aid = i.info.activation_id;
+    const std::string args = i.args;
+    const std::string code = i.code;
 
-  /* Check snapshot cache for function-specific snapshot */
-  auto cached_snap = root_.GetSnapshot(fid); // um_sv_map_.find(fid);
-  if (unlikely(cached_snap == nullptr)) {
-    kprintf_force(RED "Error: no snapshot for fid %u\n" RESET, fid);
-		ebbrt::kabort();
+    /* Check snapshot cache for function-specific snapshot */
+    auto cached_snap = root_.GetSnapshot(fid);
+    if (unlikely(cached_snap == nullptr)) {
+      kprintf_force(RED "Error: no snapshot for fid %u\n" RESET, fid);
+      ebbrt::kabort();
   }
   auto umi = std::make_unique<umm::UmInstance>(*cached_snap);
   auto umi_id = umi->Id();
   kprintf_force("C(%d): hot start %s, %u, %u\n",
           (size_t)ebbrt::Cpu::GetMine(), aid.c_str(), fid, umi_id);
 
-  auto umsesh = create_session(tid, fid);
+  // Create session
+  auto umsesh = create_session(i.info);
 
   /* Setup the operation handlers of the InvocationSession */
   umsesh->WhenConnected().Then(
@@ -291,11 +407,27 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
         umsesh->SendHttpRequest("/run", args, false); });
 
   // Halt when closed
-  umsesh->WhenClosed().Then([this, umi_id](auto f) {
+  umsesh->WhenClosed().Then([this, umi_id, fid](auto f) {
+    this->request_concurrency_--;
+    ebbrt::event_manager->SpawnLocal([this]() { this->Poke(); }, true);
+    if (this->spicy_is_enabled()) {
+      /* To enable magma hot starts we need to keep this instance booted */
+      if (!(this->check_ready_instance(fid)) &&
+          this->instance_can_be_reused(umi_id)) {
+        /* No existing instance exists for this function on this core*/
+        auto umi = umm::manager->GetInstance(umi_id);
+        kassert(umi);
+        umi->EnableYield();
+        this->save_ready_instance(fid, umi_id);
+        umm::manager->SignalYield(umi_id);
+        return;
+      }
+    }
+    // Otherwise continue and halt the instance 
     ebbrt::event_manager->SpawnLocal(
         [this, umi_id] {
            //kprintf(GREEN "Connection Closed...\n" RESET);
-          umm::manager->SignalHalt(umi_id); /* Return to back to init_code_and_snap */
+          umm::manager->SignalHalt(umi_id); 
         },
         /* force async */ true);
   });
@@ -309,8 +441,6 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
   });
 
   /* Boot the snapshot */
-  is_running_ = true;
-
   umm::manager->Load(std::move(umi)).Block(); // block until core is loaded
   //kprintf(RED "UMI #%d is loaded and about to begin hot start\n" RESET, umi_id);
 
@@ -318,96 +448,170 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
   ebbrt::event_manager->SpawnLocal(
       [this, umsesh] {
         // Start a new TCP connection with the http request
-        //kprintf(RED "Hot start connect \n" RESET);
-				auto port = get_internal_port();
-        umsesh->Pcb().Connect(umm::UmInstance::CoreLocalIp(), 8080, port);
+        kprintf(RED "Hot start connect \n" RESET);
+        umsesh->Connect();
       },
       /* force async */ true);
 
   /* Boot the snapshot */
-  is_running_ = true;
-
-  // umm::manager->Run(std::move(umi));
   umm::manager->Start(umi_id);// block until call to manager->Halt() 
   /* RETURN HERE AFTER HALT */
+  kprintf(RED "C(%d): hot start finished %s, %u, %u\n" RESET,
+          (size_t)ebbrt::Cpu::GetMine(), aid.c_str(), fid, umi_id);
   delete umsesh;
-  is_running_ = false;
-  //kprintf(RED "Finished HOT start \n" RESET);
   return true;
 }
 
-seuss::InvocationSession* seuss::Invoker::create_session(uint64_t tid, size_t fid) {
-  // NOTE: old way of stack allocating pcb and istats.
-  // ebbrt::NetworkManager::TcpPcb pcb;
-  // InvocationStats istats = {0};
-
-  auto pcb = new ebbrt::NetworkManager::TcpPcb;
-  auto isp = new InvocationStats;
-
-  *isp = {0};
-  (*isp).transaction_id = tid;
-  (*isp).function_id = fid;
-  // TODO: leak
-  return new InvocationSession(std::move(*pcb), *isp);
+bool seuss::Invoker::check_ready_instance(size_t fid) {
+  auto it = stalled_instance_map_.find(fid);
+  if (it != stalled_instance_map_.end()) {
+    return true; 
+  }
+  return false; 
 }
 
-void seuss::Invoker::Queue(seuss::Invocation i) {
-  root_.AddWork(i);
+umm::umi::id seuss::Invoker::get_ready_instance(size_t fid) {
+  auto it = stalled_instance_map_.find(fid);
+  if (it != stalled_instance_map_.end()) {
+    umm::umi::id ret = it->second;
+    stalled_instance_map_.erase(fid);
+    // remove instance from fifo
+    auto loc = std::find(stalled_instance_fifo_.begin(), stalled_instance_fifo_.end(), fid);
+    if( loc != stalled_instance_fifo_.end()){
+      stalled_instance_fifo_.erase(loc);
+    } 
+    return ret;
+  }
+  ebbrt::kabort("Tried to get a non-existant instance\n");
+  return umm::umi::null_id;
+}
+
+bool seuss::Invoker::instance_can_be_reused(umm::umi::id id){
+  // Check if core limit has been hit
+  auto c = stalled_instance_usage_count_.size();
+  if (c >= spicy_limit_) {
+    return false;
+  }
+  // Check reuse limit on instance 
+  auto it = stalled_instance_usage_count_.find(id);
+  if (it != stalled_instance_usage_count_.end()) {
+    if (it->second < spicy_reuse_limit_) {
+      return true;
+     }
+     kprintf_force(CYAN "Reuse limit reached for instance %d\n" RESET, id);
+     return false;
+  }
+  // No record of this instance
+  return true;
+}
+
+void seuss::Invoker::save_ready_instance(size_t fid, umm::umi::id id){
+  auto it = stalled_instance_map_.find(fid);
+  if (it != stalled_instance_map_.end()) {
+    ebbrt::kabort("Tried to double-save a spicy instance\n");
+    return;
+  }
+
+  // increase the usage count for this instance
+  auto it2 = stalled_instance_usage_count_.find(id);
+  if (it2 != stalled_instance_usage_count_.end()) {
+    auto count = it2->second + 1;
+    stalled_instance_usage_count_[id] = count;
+  } else { // no previous entry in table
+    stalled_instance_usage_count_[id] = 1;
+  }
+
+  // Save umi for reuse
+  stalled_instance_map_.emplace(fid, id);
+  stalled_instance_fifo_.push_back(fid);
+}
+
+void seuss::Invoker::garbage_collect_ready_instance() {
+  if (stalled_instance_map_.empty())
+    return;
+  // Arbitrary garbage collection policy: remove the "first" instance
+  auto first = stalled_instance_fifo_.front();
+  stalled_instance_fifo_.pop_front();
+  return clear_ready_instance(first);
+}
+
+void seuss::Invoker::clear_ready_instance(size_t fid) {
+  auto id = get_ready_instance(fid);
+  if(id){
+    kprintf(RED "MAGMA: clearing UMI%u for F%u\n" RESET, id, fid);
+    umm::manager->SignalHalt(id);
+  }
   return;
 }
 
-void seuss::Invoker::Poke(){
-  Invocation i;
-  if (request_concurrency_ == request_concurrency_limit)
-    return;
-  if(root_.GetWork(i)){
-    Invoke(i);
-  }
-}
+bool seuss::Invoker::process_spicy_start(seuss::Invocation i) {
 
-bool ctr_init[] = {false, false, false};
-void seuss::Invoker::Invoke(seuss::Invocation i) {
   size_t fid = i.info.function_id;
+  const std::string aid  = i.info.activation_id;
   const std::string args = i.args;
   const std::string code = i.code;
-  ++request_concurrency_;
 
-  //kprintf("invoker_core_%d received invocation: (%u, %u)\n CODE: %s\n ARGS: %s\n",
-  //        (size_t)ebbrt::Cpu::GetMine(), tid, fid, code.c_str(), args.c_str());
+  /* Get instance for this function */
+  auto umi_id = get_ready_instance(fid);
+  kassert(umi_id);
+  kprintf_force("C(%d):[%d,%d] " RED "spicy hot" RESET" start %s, %u, %u\n",
+          (size_t)ebbrt::Cpu::GetMine(), request_concurrency_.load(), stalled_instance_fifo_.size(), aid.c_str(), fid, umi_id);
 
-  /* Check for a snapshot in the cache */
-  auto cached_snap = root_.GetSnapshot(fid); // um_sv_map_.find(fid);
-  if (cached_snap == nullptr) {
-    /* CACHE MISS */
-    process_warm_start(i);
-  }else{
-    /* CACHE HIT */
-    process_hot_start(i);
-  }
+  auto umi = umm::manager->GetInstance(umi_id);
+  kassert(umi);
 
-  //kprintf_force("C(%d): finish invocation tid=%u, fid=%u\n",
-  //        (size_t)ebbrt::Cpu::GetMine(), tid, fid);
-  --request_concurrency_;
+  uint16_t src_port = get_internal_port();
+  umi->RegisterPort(src_port);
+  umi->DisableYield();
+  auto pcb = new ebbrt::NetworkManager::TcpPcb;
+  auto umsesh = new InvocationSession(std::move(*pcb), i.info, src_port);
 
-  /* Check the shared queue for additional work to be done */
-  Invocation next_i;
-  if (root_.GetWork(next_i)) {
-    //kprintf_force("C(%D): invoking from queue\n",
-    //              (size_t)ebbrt::Cpu::GetMine());
-    ebbrt::event_manager->SpawnLocal([this, next_i]() { Invoke(next_i); }, true);
-  }
+  /* Setup the operation handlers of the InvocationSession */
+  umsesh->WhenConnected().Then(
+      [this, umsesh, args](auto f) {
+        umsesh->SendHttpRequest("/run", args, false); });
 
+  umsesh->WhenClosed().Then([this, fid, umi_id](auto f) {
+    this->request_concurrency_--;
+    ebbrt::event_manager->SpawnLocal([this]() { this->Poke(); }, true);
+    if (!(this->check_ready_instance(fid)) && this->instance_can_be_reused(umi_id)) {
+      auto umi = umm::manager->GetInstance(umi_id);
+      if (umi) {
+        umi->EnableYield();
+        this->save_ready_instance(fid, umi_id);
+        umm::manager->SignalYield(umi_id);
+      }
+    } else {
+      ebbrt::event_manager->SpawnLocal(
+          [this, umi_id] { umm::manager->SignalHalt(umi_id); },
+          /* force async */ true);
+    }
+  });
 
+  umsesh->WhenAborted().Then([this, umi_id](auto f) {
+    ebbrt::event_manager->SpawnLocal(
+        [this, umi_id] {
+          kprintf(RED "MAGMA SESSION ABORTED...\n" RESET);
+          umm::manager->SignalHalt(umi_id);
+        },
+        /* force async */ true);
+  });
+
+  /* Spawn a new event to make a connection with the instance */
+  ebbrt::event_manager->SpawnLocal(
+      [this, umsesh] {
+        // Start a new TCP connection with the http request
+        umsesh->Connect();
+      },
+      /* force async */ true);
+
+  umm::manager->RequestActivation(umi_id);
+  return true;
 }
 
-void seuss::Invoker::Init() {
-  // Pre-allocate event stacks
-  ebbrt::event_manager->PreAllocateStacks(256);
-  kprintf("invoker_core_%d is online\n", (size_t)ebbrt::Cpu::GetMine());
-}
-
-void seuss::Invoker::Resolve(seuss::InvocationStats istats, std::string ret) {
-  seuss_channel->SendReply(
-      ebbrt::Messenger::NetworkId(ebbrt::runtime::Frontend()), istats, ret);
+seuss::InvocationSession* seuss::Invoker::create_session(seuss::InvocationStats istats) {
+  auto pcb = new ebbrt::NetworkManager::TcpPcb;
+  auto src_port = get_internal_port();
+  return new InvocationSession(std::move(*pcb), istats, src_port);
 }
 

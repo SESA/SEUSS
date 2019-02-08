@@ -29,6 +29,11 @@ extern uint16_t native_instance_count;
 extern uint16_t native_core_count;
 extern uint16_t native_memory_gb;
 extern uint16_t native_numa_count;
+// Seuss Invoker configuration 
+extern uint16_t native_invoker_core_concurrency_limit;
+extern uint16_t native_invoker_core_spicy_limit;
+extern uint16_t native_invoker_core_spicy_reuse;
+
 extern bool local_init;
 
 #ifdef __ebbrt__

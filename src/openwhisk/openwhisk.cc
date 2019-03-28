@@ -46,7 +46,7 @@ using namespace std::chrono_literals;
 vector<std::string> genRevisionVec(int runs, int fns){
   // Create vec of size runs with fns many unique stings repeated runs / fns times
 
-  kassert(runs % fns == 0);
+  assert(runs % fns == 0);
 
   // Use this to generate the fns many ran names.
 
@@ -112,6 +112,11 @@ void openwhisk::test() {
             continue;
           }
 
+          if(!seuss::controller->Ready()){
+            cout << "No backend found. Wait a bit and try again (or 'q' to quit)" << endl;
+            continue;
+          }
+
           // auto start = std::chrono::high_resolution_clock::now();
 
           std::cout << "Invoking test functions " << b.runs << " time(s)..." << std::endl;
@@ -121,7 +126,7 @@ void openwhisk::test() {
           // Generate a vector of function names to execute.
           vector<std::string> revisionVec = genRevisionVec(b.runs, b.fns);
 
-          kassert(revisionVec.size() == (unsigned)b.runs);
+          assert(revisionVec.size() == (unsigned)b.runs);
 
           int i = 0;
           for(const std::string& re : revisionVec){

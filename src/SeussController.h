@@ -36,6 +36,9 @@ public:
   // Constructor
   Controller(ebbrt::EbbId ebbid);
 
+  // Return true if at least one backend is connected
+  bool Ready();
+
   /* The starting point of a seuss activation 
   *  The waitTime of an activation begins when this method is called
   */

@@ -14,7 +14,6 @@
 #include <ebbrt/GlobalStaticIds.h>
 #include <ebbrt/SharedEbb.h>
 
-#include "MemberSet.h"
 
 namespace ebbrt {
 namespace dsys {
@@ -24,15 +23,12 @@ namespace dsys {
   * The dsys controller is local handle to the distributed system at large
   *
   */
-class Controller : public ebbrt::SharedEbb<Controller>,
-                   public ebbrt::MemberSet<Controller> {
+class Controller : public ebbrt::SharedEbb<Controller> {
 
 public:
   static const ebbrt::EbbId global_id =
       ebbrt::GenerateStaticEbbId("DsysController");
-  Controller(ebbrt::EbbId id) : MemberSet<Controller>(id){};
-  void MemberSetEventMemberAdd(MemberId id) override;
-  void MemberSetEventMemberDelete(MemberId id) override;
+  Controller(ebbrt::EbbId id) {};
   
 #ifndef __ebbrt__
   void AllocateNativeInstances(std::string binary_path);

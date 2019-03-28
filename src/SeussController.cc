@@ -41,6 +41,10 @@ void seuss::Controller::RegisterNode(ebbrt::Messenger::NetworkId nid) {
       [this, nid]() { /*seuss_channel->Ping(nid);*/ }, ctxt);
 }
 
+bool seuss::Controller::Ready(){
+  return !_nids.empty(); // verify we have a backend node
+}
+
 ebbrt::Future<openwhisk::msg::CompletionMessage>
 seuss::Controller::ScheduleActivation(
     const openwhisk::msg::ActivationMessage &am, std::string code ) {

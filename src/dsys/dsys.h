@@ -3,7 +3,13 @@
 //          http://www.boost.org/LICENSE_1_0.txt)
 #ifndef DSYS_DSYS_H_
 #define DSYS_DSYS_H_
+#include <algorithm>
+#include <cstdint>
+#include <iostream>
+#include <iterator>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #ifndef __ebbrt__
 #include <boost/program_options.hpp>
@@ -17,7 +23,6 @@ namespace fs = boost::filesystem;
   */
 
 #include "Controller.h"
-#include "MemberSet.h"
 
 namespace ebbrt {
 namespace dsys {

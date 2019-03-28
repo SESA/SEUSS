@@ -19,9 +19,7 @@ bool ebbrt::dsys::local_init;
 void ebbrt::dsys::Init(){
   auto tr = new Controller(Controller::global_id);
   Controller::Create(tr, Controller::global_id);
-  controller->Init();
 #if __ebbrt__ 
-  controller->Join();
 #else
   auto count = native_instance_count;
   while(count--){

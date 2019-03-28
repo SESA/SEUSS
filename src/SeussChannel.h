@@ -7,6 +7,7 @@
 
 #include <unordered_map>
 
+#include <ebbrt/Cpu.h>  
 #include <ebbrt/IOBuf.h>
 #include <ebbrt/Message.h>
 #include <ebbrt/Messenger.h>

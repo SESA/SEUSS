@@ -44,8 +44,7 @@ void seuss::Init(){
   }
 
   invoker_root->Bootstrap();
-  kprintf_force(GREEN "\nFinished initialization of " RESET);
-  kprintf_force(GREEN "Seuss Invoker (*)\n" RESET);
+  kprintf_force(GREEN "\nFinished initialization of Seuss Invoker(!)\n" RESET);
 }
 
 /* class seuss::InvokerRoot */
@@ -58,7 +57,7 @@ size_t seuss::InvokerRoot::AddWork(seuss::Invocation i) {
   std::tie(std::ignore, inserted) =
       request_map_.emplace(tid, std::move(record));
   // Assert there was no collision on the key
-  assert(inserted);
+  kassert(inserted);
   request_queue_.push(tid);
 
   // Inform all the cores about the work starting at a random offset
@@ -81,7 +80,7 @@ bool seuss::InvokerRoot::GetWork(Invocation& i) {
   request_queue_.pop();
   auto req = request_map_.find(tid);
   // TODO: fail gracefully, drop request
-  assert(req != request_map_.end());
+  kassert(req != request_map_.end());
   i = req->second;
   request_map_.erase(tid);
   return true;
@@ -94,6 +93,7 @@ umm::UmSV* seuss::InvokerRoot::GetBaseSV() {
 
 umm::UmSV* seuss::InvokerRoot::GetSnapshot(size_t fid) {
   kassert(is_bootstrapped_);
+  std::lock_guard<ebbrt::SpinLock> guard(qlock_);
   auto cache_result = snapmap_.find(fid);
   if(cache_result == snapmap_.end()){
     return nullptr;
@@ -110,23 +110,59 @@ bool seuss::InvokerRoot::SetSnapshot(size_t fid, umm::UmSV* sv) {
     delete sv;
     return false;
   }
-  {
+  // Do we have room for another snapshot?
+  if (snapmap_.size() >= default_snapmap_limit) {
+    // Here is where we could evict a snapshot
+    kprintf(YELLOW "No room left for snapshot #%u\n" RESET, fid);
+    delete sv;
+    return false;
+  }
+  // Save the snapshot into the snapmap
+  { 
     //TODO: lock?
     bool inserted;
     std::tie(std::ignore, inserted) =
         snapmap_.emplace(fid, sv);
     // Assert there was no collision on the key
-    assert(inserted);
+    kassert(inserted);
     kprintf(YELLOW "Snapshot created for fid #%u\n" RESET, fid);
   }
   return true;
 }
 
+#if 0
+bool seuss::InvokerRoot::DeleteSnapshot(size_t fid) {
+  kassert(is_bootstrapped_);
+  auto cache_result = snapmap_.find(fid);
+  // confirm snapshot exists
+  kbugon(cache_result == snapmap_.end());
+  {
+    // Assert there was no collision on the key
+    snapmap_.erase(cache_result);
+    kprintf(YELLOW "Snapshot deleted for fid #%u\n" RESET, fid);
+  }
+  return true;
+}
+
+size_t seuss::InvokerRoot::EvictSnapshot() {
+  kbugon(snapmap_.size() == 0);
+  // Evict a random entry
+  uint64_t seed = ebbrt::random::Get() % snapmap_.size();
+  kbugon(seed >= snapmap_.size());
+  auto random_snap = std::next(std::begin(snapmap_), seed);
+  kbugon(cache_result == snapmap_.end());
+  auto fid = cache_result->first;
+  kprintf(YELLOW "Evicting snapshot for fid #%u\n" RESET, fid);
+  delete cache_result->second;
+  snapmap_.erase(cache_result);
+}
+#endif
+
 void seuss::InvokerRoot::Bootstrap() {
   // THIS SHOULD RUN AT MOST ONCE 
   kassert(!is_bootstrapped_);
   kprintf("Bootstrapping InvokerRoot on core #%d nid #%d\n",
-                (size_t)ebbrt::Cpu::GetMine(), ebbrt::Cpu::GetMyNode().val());
+          (size_t)ebbrt::Cpu::GetMine(), ebbrt::Cpu::GetMyNode().val());
 
   // Port naming kludge
   auto sv = umm::ElfLoader::createSVFromElf(&_sv_start);
@@ -199,8 +235,6 @@ void seuss::Invoker::Init() {
       }
       request_concurrency_limit_ = atoi(clim_str.c_str());
     }
-    kprintf("invoker_core_%d concurrency limit: %d\n",
-            (size_t)ebbrt::Cpu::GetMine(), request_concurrency_limit_);
   }
   // invoker core spicy start limit
   {
@@ -229,11 +263,16 @@ void seuss::Invoker::Init() {
         }
         spicy_reuse_limit_ = atoi(rlim_str.c_str());
       }
-      kprintf("invoker_core_%d spicy hot limits: %d active instances / %d reuses\n",
-              (size_t)ebbrt::Cpu::GetMine(), spicy_limit_, spicy_reuse_limit_);
     }
   }
   kprintf("invoker_core_%d is online\n", (size_t)ebbrt::Cpu::GetMine());
+  if ((size_t)ebbrt::Cpu::GetMine() == 0) {
+    kprintf_force("invoker_core instance concurrency limit: %d\n",
+                  request_concurrency_limit_);
+    kprintf_force(
+        "invoker_core instance reuse limits: %d idle / %d reuses\n",
+        spicy_limit_, spicy_reuse_limit_);
+  }
 }
 
 void seuss::Invoker::Queue(seuss::Invocation i) {
@@ -267,7 +306,6 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
   const std::string args = i.args;
   const std::string code = i.code;
   ++request_concurrency_;
-
 
   /* Check for a snapshot in the cache */
   auto cached_snap = root_.GetSnapshot(fid); 
@@ -364,7 +402,6 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   ebbrt::event_manager->SpawnLocal(
       [this, umsesh] {
         // Start a new TCP connection with the http request
-        kprintf(YELLOW "Warm start connect \n" RESET);
         umsesh->Connect();
       },
       /* force async */ true);
@@ -411,7 +448,7 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
     this->request_concurrency_--;
     ebbrt::event_manager->SpawnLocal([this]() { this->Poke(); }, true);
     if (this->spicy_is_enabled()) {
-      /* To enable magma hot starts we need to keep this instance booted */
+      /* To enable spicy hot starts we need to keep this instance booted */
       if (!(this->check_ready_instance(fid)) &&
           this->instance_can_be_reused(umi_id)) {
         /* No existing instance exists for this function on this core*/
@@ -434,7 +471,7 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
   umsesh->WhenAborted().Then([this, umi_id](auto f) {
     ebbrt::event_manager->SpawnLocal(
         [this, umi_id] {
-          kprintf(RED "SESSION ABORTED...\n" RESET);
+          kprintf_force(RED "SESSION ABORTED...\n" RESET);
           umm::manager->SignalHalt(umi_id); /* Return to back to init_code_and_snap */
         },
         /* force async */ true);
@@ -448,7 +485,6 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
   ebbrt::event_manager->SpawnLocal(
       [this, umsesh] {
         // Start a new TCP connection with the http request
-        kprintf(RED "Hot start connect \n" RESET);
         umsesh->Connect();
       },
       /* force async */ true);
@@ -456,7 +492,7 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
   /* Boot the snapshot */
   umm::manager->Start(umi_id);// block until call to manager->Halt() 
   /* RETURN HERE AFTER HALT */
-  kprintf(RED "C(%d): hot start finished %s, %u, %u\n" RESET,
+  kprintf("C(%d): hot start finished %s, %u, %u\n" RESET,
           (size_t)ebbrt::Cpu::GetMine(), aid.c_str(), fid, umi_id);
   delete umsesh;
   return true;
@@ -488,18 +524,18 @@ umm::umi::id seuss::Invoker::get_ready_instance(size_t fid) {
 
 bool seuss::Invoker::instance_can_be_reused(umm::umi::id id){
   // Check if core limit has been hit
-  auto c = stalled_instance_usage_count_.size();
+  auto c = stalled_instance_map_.size();
   if (c >= spicy_limit_) {
     return false;
   }
   // Check reuse limit on instance 
   auto it = stalled_instance_usage_count_.find(id);
   if (it != stalled_instance_usage_count_.end()) {
-    if (it->second < spicy_reuse_limit_) {
+    if (it->second <= spicy_reuse_limit_) {
       return true;
-     }
-     kprintf_force(CYAN "Reuse limit reached for instance %d\n" RESET, id);
-     return false;
+    }
+    kprintf_force(CYAN "Reuse limit reached for instance %d\n" RESET, id);
+    return false;
   }
   // No record of this instance
   return true;
@@ -574,24 +610,26 @@ bool seuss::Invoker::process_spicy_start(seuss::Invocation i) {
   umsesh->WhenClosed().Then([this, fid, umi_id](auto f) {
     this->request_concurrency_--;
     ebbrt::event_manager->SpawnLocal([this]() { this->Poke(); }, true);
-    if (!(this->check_ready_instance(fid)) && this->instance_can_be_reused(umi_id)) {
+    if (!(this->check_ready_instance(fid)) &&
+        this->instance_can_be_reused(umi_id)) {
+      /* No existing instance exists for this function on this core*/
       auto umi = umm::manager->GetInstance(umi_id);
-      if (umi) {
-        umi->EnableYield();
-        this->save_ready_instance(fid, umi_id);
-        umm::manager->SignalYield(umi_id);
-      }
-    } else {
-      ebbrt::event_manager->SpawnLocal(
-          [this, umi_id] { umm::manager->SignalHalt(umi_id); },
-          /* force async */ true);
+      ebbrt::kbugon(!umi);
+      umi->EnableYield();
+      this->save_ready_instance(fid, umi_id);
+      umm::manager->SignalYield(umi_id);
+      return;
     }
+    // Otherwise halt this instance 
+    ebbrt::event_manager->SpawnLocal(
+        [this, umi_id] { umm::manager->SignalHalt(umi_id); },
+        /* force async */ true);
   });
 
   umsesh->WhenAborted().Then([this, umi_id](auto f) {
     ebbrt::event_manager->SpawnLocal(
         [this, umi_id] {
-          kprintf(RED "MAGMA SESSION ABORTED...\n" RESET);
+          kprintf_force(RED "MAGMA SESSION ABORTED...\n" RESET);
           umm::manager->SignalHalt(umi_id);
         },
         /* force async */ true);

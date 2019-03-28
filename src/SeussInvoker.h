@@ -25,8 +25,10 @@
 
 namespace seuss {
 
-const uint8_t default_concurrency_limit = 12;      // 15*12=180
+// cores * limit = total concurrent requests 
+const uint8_t default_concurrency_limit = 12;   
 const uint16_t default_instance_reuse_limit = 300; // spicy hot starts
+const uint16_t default_snapmap_limit = 16384; // snapshot cache max size
 
 void Init();
 
@@ -53,6 +55,7 @@ private:
   umm::UmSV *base_um_env_;
   bool is_bootstrapped_{false}; // Have we created a base snapshot?
   ebbrt::SpinLock qlock_;
+  ebbrt::SpinLock snaplock_;
   // map tid to Invocation{} .
   std::unordered_map<uint64_t, Invocation> request_map_;
   // Queue requests by tid
@@ -88,7 +91,6 @@ public:
   void Resolve(InvocationStats istats, const std::string ret_args);
 
 private:
-  bool process_wrong_start(Invocation i);
   /* Boot from the base snapshot and capture a new snapshot for this function*/
   bool process_warm_start(Invocation i);
   /* Boot from function-specific snapshot */

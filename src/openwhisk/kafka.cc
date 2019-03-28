@@ -151,17 +151,18 @@ void openwhisk::kafka::activation_consumer_loop() {
         if (openwhisk::mode == "null") {
           // Create an empty response
           msg::CompletionMessage cm(am);
+          cm.invoker_.instance_ = invoker_id;
           cm.response_.status_code_ = 0; // success
           MessageBuilder builder("completed0");
           auto pl = cm.to_json();
           builder.payload(pl);
           kafka_producer.produce(builder);
         } else {
-          /* For invokerHealthTestActions we immediately return
-           * success */
+          /* For invokerHealthTestActions we immediately return */
           if (am.action_.name_ == "invokerHealthTestAction0") {
             // Create an empty response
             msg::CompletionMessage cm(am);
+            cm.invoker_.instance_ = invoker_id;
             cm.response_.status_code_ = 0; // success
             MessageBuilder builder("completed0");
             auto pl = cm.to_json();
@@ -173,6 +174,7 @@ void openwhisk::kafka::activation_consumer_loop() {
             cmf.Then(
                 [&kafka_producer](ebbrt::Future<msg::CompletionMessage> cmf) {
                   auto cm = cmf.Get();
+                  cm.invoker_.instance_ = invoker_id;
                   MessageBuilder builder("completed0");
                   auto pl = cm.to_json();
                   builder.payload(pl);

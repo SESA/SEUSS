@@ -13,7 +13,6 @@ using namespace std;
 
 openwhisk::msg::CompletionMessage::CompletionMessage( openwhisk::msg::ActivationMessage am ){
   transid_ = am.transid_;
-  invoker_ = am.rootControllerIndex_; 
   response_.activationId_ = am.activationId_;
   response_.name_ = am.action_.name_;
   response_.namespace_ = am.user_.namespace_.name_;

@@ -26,9 +26,9 @@
 namespace seuss {
 
 // cores * limit = total concurrent requests 
-const uint8_t default_concurrency_limit = 12;   
-const uint16_t default_instance_reuse_limit = 300; // spicy hot starts
-const uint16_t default_snapmap_limit = 16384; // snapshot cache max size
+const uint8_t default_concurrency_limit = 1; 
+const uint16_t default_instance_reuse_limit = 300; // hot start reuse 
+const uint16_t default_snapmap_limit = 16384; // snapshot cache size
 
 void Init();
 
@@ -74,57 +74,68 @@ class Invoker : public ebbrt::MulticoreEbb<Invoker, InvokerRoot> {
 public:
   static const ebbrt::EbbId global_id = ebbrt::GenerateStaticEbbId("Invoker");
   explicit Invoker(const InvokerRoot &root)
-      : root_(const_cast<InvokerRoot &>(root)), base_port_(49160), port_(0),
-        request_concurrency_(0) {
+      : root_(const_cast<InvokerRoot &>(root)), core_(ebbrt::Cpu::GetMine()),
+        base_port_(49160), port_(0), request_concurrency_(0) {
     port_range_ = ((1 << 16) - base_port_ - 1);
   };
 
-  /* Invoke code on an uninitialized instance */
+  /* Start a new Invocation */
   void Invoke(Invocation i);
-  /* Add request to work queue but do no work */
+
+  /* Resolve a pending Invocation*/
+  void Resolve(InvocationStats istats, const std::string ret_args);
+
+  /* Add invocation request to work queue (but do no work) */
   void Queue(Invocation i);
+
   /* Initialize invoker on this core*/
   void Init();
-  /* Wake core up, there's work to do! */
+
+  /* Wake up, there's work to do! */
   void Poke();
-  // TODO: Remove method and do resolution within Invoke(...)
-  void Resolve(InvocationStats istats, const std::string ret_args);
 
 private:
   /* Boot from the base snapshot and capture a new snapshot for this function*/
-  bool process_warm_start(Invocation i);
+  bool process_cold_start(Invocation i);
   /* Boot from function-specific snapshot */
-  bool process_hot_start(Invocation i);
+  bool process_warm_start(Invocation i);
   /* Connective to an active instance for this function */
-  bool process_spicy_start(Invocation i);
-
-  /* Create a new session handler */
-  InvocationSession *create_session(InvocationStats i);
-
-  /* Concurrent requests (i.e., for blocked IO )*/
-  uint16_t request_concurrency_limit_;
-
-  /* Spicy Hot settings */
-  bool spicy_is_enabled() { return spicy_limit_; }
-  void save_ready_instance(size_t fid, umm::umi::id id);
-  void clear_ready_instance(size_t fid);
-  bool instance_can_be_reused(umm::umi::id id);
-  bool check_ready_instance(size_t fid);
-  umm::umi::id get_ready_instance(size_t fid);
-  void garbage_collect_ready_instance();
-  uint16_t spicy_limit_ = 0;
-  uint16_t spicy_reuse_limit_;
+  bool process_hot_start(Invocation i);
+  
+  /* Returns a new session handler with the callbacks set */
+  InvocationSession *new_invocation_session(seuss::InvocationStats *istats,
+                               const size_t fid,
+                               const umm::umi::id umi_id,
+                               const std::string args,
+                               const std::string code = std::string());
+  /* Concurrency management (i.e., instances blocked on IO )*/
+  uint16_t request_concurrency_limit_ = default_concurrency_limit;
+  /* Hot start management  */
+  bool hot_instances_are_enabled() { return hot_instance_limit_; }
+  /* Return true if instance was saved */
+  bool save_hot_instance(size_t fid, umm::umi::id id);
+  bool hot_instance_exists(size_t fid);
+  bool hot_instance_can_be_saved(umm::umi::id id);
+  bool hot_instance_can_be_reused(umm::umi::id id);
+  umm::umi::id get_hot_instance(size_t fid);
+  //TODO:(jmcadden): rename spicy -> hot
+  uint16_t hot_instance_limit_ = 0;
+  uint16_t hot_instance_reuse_limit_ = default_instance_reuse_limit;
+  
 
   InvokerRoot &root_;
+  size_t core_; 
   const uint16_t base_port_;
   uint16_t port_range_; // port should be between base_port_ and MAX_UINT_16
   std::atomic<std::uint16_t> port_;
-  std::atomic<std::uint8_t> request_concurrency_;
   uint16_t get_internal_port() {
     port_ += ebbrt::Cpu::Count();
     size_t port_offset = (size_t)ebbrt::Cpu::GetMine();
     return base_port_ + ((port_ + port_offset) % port_range_);
   }
+  /* Counters */
+  uint64_t invctr_ = 0;
+  std::atomic<std::uint8_t> request_concurrency_;
   // Arg code pair
   typedef std::tuple<size_t, std::string, std::string> invocation_request;
   // map tid to (arg, code) pairs.

@@ -20,7 +20,7 @@ struct InvocationStats {
   size_t function_id;  
   size_t args_size;
   char activation_id[34] = {0};
-  ExecStats exec = {0};
+  ExecStats exec = {0}; // zero fill
 };
 
 struct Invocation {

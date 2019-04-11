@@ -20,6 +20,8 @@
 #include "InvocationSession.h"
 #include "umm/src/UmManager.h"
 
+#define DEBUG_PRINT_SEUSS 0
+
 #define kprintf ebbrt::kprintf
 using ebbrt::kprintf_force;
 
@@ -45,7 +47,7 @@ void seuss::Init(){
   }
 
   invoker_root->Bootstrap();
-  kprintf_force(GREEN "\nFinished initialization of Seuss Invoker(#)\n" RESET);
+  kprintf_force(GREEN "\nFinished initialization of Seuss Invoker(%)\n" RESET);
 }
 
 /* class seuss::InvokerRoot */
@@ -168,17 +170,6 @@ void seuss::InvokerRoot::Bootstrap() {
   // Kick off the instance
   umm::manager->Run(std::move(umi));
   // Return once manager->Halt() is called
-
-  // Kick off the invoker on all cores 
-  size_t num_cpus = ebbrt::Cpu::Count();
-  size_t my_cpu = ebbrt::Cpu::GetMine();
-  for (size_t i = 0; i < num_cpus; i++) {
-    if(i == my_cpu){
-      ebbrt::event_manager->SpawnLocal([this]() { ebb_->Poke(); });
-    }else{
-      ebbrt::event_manager->SpawnRemote([this]() { ebb_->Poke(); }, i);
-    }
-  }
   is_bootstrapped_ = true;
   return;
 }
@@ -334,7 +325,7 @@ bool seuss::Invoker::process_cold_start(seuss::Invocation i) {
   umsesh->WhenFinished().Block();
   auto status = umsesh->WhenFinished().Get();
   if (status)
-    kprintf("C(%d) " CYAN "cold finish" RESET ": %s, %u, %u\n",
+    kprintf_force("C(%d) " CYAN "cold finish" RESET ": %s, %u, %u\n",
             (size_t)ebbrt::Cpu::GetMine(), istats.activation_id, fid, umi_id);
   delete umsesh;
   return status;
@@ -346,6 +337,9 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   const std::string args = i.args;
   const size_t fid = istats.function_id;
 
+  /* Mark a warm start with Init Time = 1 */
+  istats.exec.init_time = 1;
+
   /* Check snapshot cache for function-specific snapshot */
   auto cached_snap = root_.GetSnapshot(fid);
   if (cached_snap == nullptr) {
@@ -355,8 +349,8 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   /* Create new UM instance for this invocation */
   auto umi = std::make_unique<umm::UmInstance>(*cached_snap);
   auto umi_id = umi->Id();
-  kprintf_force("C(%d)[%d] " YELLOW "warm start" RESET ": %s, %u, %u\n",
-                core_, invctr_, istats.activation_id, fid,
+  kprintf_force("C(%d)%d[%d] " YELLOW "warm start" RESET ": %s, %u, %u\n",
+                core_, invctr_,request_concurrency_.load(), istats.activation_id, fid,
                 umi_id);
 
   /* Make a new invocation session with the instance */
@@ -371,18 +365,13 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   ebbrt::event_manager->SpawnLocal([umi_id]() { umm::manager->Start(umi_id); });
 
   /* Start new event to make a connection with the instance */
-  ebbrt::event_manager->SpawnLocal(
-      [this, umsesh] {
-        // Start a new TCP connection with the http request
-        umsesh->Connect();
-      },
-      /* async */ true);
+  ebbrt::event_manager->SpawnLocal([this, umsesh] { umsesh->Connect(); }, true);
 
   // Block flow control until session has finished 
   umsesh->WhenFinished().Block();
   auto status = umsesh->WhenFinished().Get();
   if (status)
-    kprintf("C(%d) " YELLOW "warm finish" RESET ": %s, %u, %u\n",
+    kprintf_force("C(%d) " YELLOW "warm finish" RESET ": %s, %u, %u\n",
             core_, istats.activation_id, fid, umi_id);
   delete umsesh;
   return status;
@@ -516,7 +505,7 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
   umsesh->WhenFinished().Block();
   auto status = umsesh->WhenFinished().Get();
   if(status)
-    kprintf("C(%d):[%d,%d] " RED "hot finish" RESET " %s, %u, %u\n",
+    kprintf_force("C(%d):[%d,%d] " RED "hot finish" RESET " %s, %u, %u\n",
             core_, request_concurrency_.load(),
             stalled_instance_fifo_.size(), istats.activation_id, fid, umi_id);
   delete umsesh;
@@ -534,6 +523,9 @@ seuss::Invoker::new_invocation_session(seuss::InvocationStats *istats,
   auto umsesh = new InvocationSession(std::move(*pcb), get_internal_port());
 
   umsesh->WhenConnected().Then([umsesh, args, code](auto f) {
+#if DEBUG_PRINT_SEUSS
+    kprintf_force(CYAN "C%d:sCon " RESET, (size_t)ebbrt::Cpu::GetMine());  
+#endif
     if (code != std::string()) {
       /* If we have code, initialize it and keep the connection alive */
       umsesh->SendHttpRequest("/init", code, true /* keep_alive */);
@@ -546,6 +538,9 @@ seuss::Invoker::new_invocation_session(seuss::InvocationStats *istats,
 
   /* When initialized send the run request */
   umsesh->WhenInitialized().Then([umsesh, istats, args](auto f) {
+#if DEBUG_PRINT_SEUSS
+    kprintf_force(CYAN "C%d:sIn " RESET, (size_t)ebbrt::Cpu::GetMine()); 
+#endif
     // Record initialization time, send run operation
     istats->exec.init_time = umsesh->get_inittime();
     umsesh->SendHttpRequest("/run", args, false /* keep_alive */);
@@ -553,6 +548,9 @@ seuss::Invoker::new_invocation_session(seuss::InvocationStats *istats,
 
   /* Resolved invocation after successful execution successfully */
   umsesh->WhenExecuted().Then([umsesh, istats](auto f) {
+#if DEBUG_PRINT_SEUSS
+    kprintf_force(CYAN "C%d:sEx " RESET, (size_t)ebbrt::Cpu::GetMine()); 
+#endif
     istats->exec.status = 0; /* SUCCESSFUL */
     istats->exec.run_time = umsesh->get_runtime();
     // Alternatively, we could wait for the connection to close and do it then
@@ -561,6 +559,9 @@ seuss::Invoker::new_invocation_session(seuss::InvocationStats *istats,
 
   /* Finalize this invocation when connection has closed */
   umsesh->WhenClosed().Then([this, umsesh, fid, umi_id](auto f) {
+#if DEBUG_PRINT_SEUSS
+    kprintf_force(CYAN "C%d:sCld " RESET, (size_t)ebbrt::Cpu::GetMine()); 
+#endif
     //FIXME: Close doesn't necessarily mean 'success'
     umsesh->Finish(true);
     // Try and save this instance for future hot starts

@@ -102,7 +102,7 @@ private:
   void enable_timer(ebbrt::clock::Wall::time_point now);
   void disable_timer(); 
   bool timer_set = false;
-  ebbrt::clock::Wall::time_point time_wait; // TIMEOUT
+  ebbrt::clock::Wall::time_point timeout_; // TIMEOUT
   ebbrt::clock::Wall::time_point init_start_time_;
   ebbrt::clock::Wall::time_point run_start_time_;
   /* helper methods */

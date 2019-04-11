@@ -17,7 +17,7 @@ void seuss::InvocationSession::Connect() {
   ebbrt::kbugon(!src_port_);
   Pcb().Connect(umm::UmInstance::CoreLocalIp(), 8080, src_port_);
   auto now = ebbrt::clock::Wall::Now();
-  time_wait = now + std::chrono::nanoseconds(500000000); // 500ms
+  timeout_ = now + std::chrono::milliseconds(500); // 500ms
   enable_timer(now);
 }
 
@@ -26,6 +26,9 @@ void seuss::InvocationSession::Connected() {
   //kprintf(GREEN "SESSION ESTABLISHED (%u)\n" RESET, src_port_);
   is_connected_ = true;
   disable_timer();
+  auto now = ebbrt::clock::Wall::Now();
+  timeout_ = now + std::chrono::seconds(60); // 60 seconds to finish invocation
+  enable_timer(now);
   ebbrt::event_manager->SpawnLocal([this]() { when_connected_.SetValue(); });
 }
 
@@ -44,6 +47,7 @@ void seuss::InvocationSession::Abort() {
 }
 
 void seuss::InvocationSession::Finish(bool status) {
+  disable_timer();
   when_finished_.SetValue(status);
 }
 
@@ -76,11 +80,11 @@ void seuss::InvocationSession::Receive(std::unique_ptr<ebbrt::MutIOBuf> b) {
 }
 
 void seuss::InvocationSession::enable_timer(ebbrt::clock::Wall::time_point now) {
-  if (timer_set || (now >= time_wait)) {
+  if (timer_set || (now >= timeout_)) {
     return;
   }
   auto duration =
-      std::chrono::duration_cast<std::chrono::microseconds>(time_wait - now);
+      std::chrono::duration_cast<std::chrono::microseconds>(timeout_ - now);
   ebbrt::timer->Start(*this, duration, /* repeat = */ false);
   timer_set = true;
 }
@@ -90,19 +94,20 @@ void seuss::InvocationSession::disable_timer() {
     ebbrt::timer->Stop(*this);
   }
   timer_set = false;
-  time_wait = ebbrt::clock::Wall::time_point(); // clear timer
+  timeout_ = ebbrt::clock::Wall::time_point(); // clear timer
 }
 
 void seuss::InvocationSession::Fire() {
-  if(timer_set){
-    kprintf_force(GREEN "B" RESET);
+  if (timer_set) {
+    kprintf_force(RED "\nC%d: InvocationSession Timed Out\n" RESET,
+                  (size_t)ebbrt::Cpu::GetMine());
   }
   timer_set = false;
   // Confirm time is valid and has expired  
   auto now = ebbrt::clock::Wall::Now();
-  if (time_wait != ebbrt::clock::Wall::time_point() && now >= time_wait) {
-    time_wait = ebbrt::clock::Wall::time_point(); // clear the time
-    kprintf_force(RED "C%d: SEUSS CONNECTION TIMED OUT\n" RESET, (size_t)ebbrt::Cpu::GetMine());
+  if (timeout_ != ebbrt::clock::Wall::time_point() && now >= timeout_) {
+    timeout_ = ebbrt::clock::Wall::time_point(); // clear the time
+    // Abort the connection, causing the InvocationSession to fail
     Abort();
   }
 }

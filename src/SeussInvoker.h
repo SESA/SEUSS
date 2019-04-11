@@ -28,7 +28,7 @@ namespace seuss {
 // cores * limit = total concurrent requests 
 const uint8_t default_concurrency_limit = 1; 
 const uint16_t default_instance_reuse_limit = 300; // hot start reuse 
-const uint16_t default_snapmap_limit = 16384; // snapshot cache size
+const uint32_t default_snapmap_limit = 32768; // snapshot cache size
 
 void Init();
 
@@ -48,11 +48,13 @@ public:
   umm::UmSV *GetBaseSV();
   umm::UmSV *GetSnapshot(size_t id);
   bool SetSnapshot(size_t id, umm::UmSV *);
+  bool CacheIsFull() { return snapmap_.size() >= default_snapmap_limit; }
 
 private:
   const std::string umi_rump_config_ =
       R"({"cmdline":"bin/node-default /nodejsActionBase/app.js", "net":{"if":"ukvmif0","cloner":"true","type":"inet","method":"static","addr":"169.254.1.0","mask":"16", "gw":"169.254.1.0"}})";
   umm::UmSV *base_um_env_;
+  umm::UmSV *preinit_env_;
   bool is_bootstrapped_{false}; // Have we created a base snapshot?
   ebbrt::SpinLock qlock_;
   ebbrt::SpinLock snaplock_;

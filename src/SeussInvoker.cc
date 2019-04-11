@@ -47,25 +47,31 @@ void seuss::Init(){
   }
 
   invoker_root->Bootstrap();
-  kprintf_force(GREEN "\nFinished initialization of Seuss Invoker(%)\n" RESET);
+  kprintf_force(GREEN "\nFinished initialization of Seuss Invoker(())\n" RESET);
 }
 
 /* class seuss::InvokerRoot */
 size_t seuss::InvokerRoot::AddWork(seuss::Invocation i) {
   std::lock_guard<ebbrt::SpinLock> guard(qlock_);
-  Invocation record = i; 
-  auto tid = i.info.transaction_id;
-  // insert records into the hash tables
-  bool inserted;
-  std::tie(std::ignore, inserted) =
-      request_map_.emplace(tid, std::move(record));
-  // Assert there was no collision on the key
-  kassert(inserted);
-  request_queue_.push(tid);
+    kprintf_force(RED "START generating work#" RESET);
+  int numRuns = 65000;
+    uint64_t foo;
+  for (int i = 0; i < numRuns; i++) {
+    Invocation record;
+    // tid = //i.info.transaction_id;
+    // insert records into the hash tables
+    bool inserted;
+    std::tie(std::ignore, inserted) =
+        request_map_.emplace(foo, std::move(record));
+    // Assert there was no collision on the key
+    kassert(inserted);
+    request_queue_.push(foo);
+  }
+    kprintf_force(RED "Finished generating work#%u\n" RESET);
 
   // Inform all the cores about the work starting at a random offset
   size_t num_cpus = ebbrt::Cpu::Count();
-  size_t offset = tid % num_cpus;
+  size_t offset = foo % num_cpus;
   for (size_t i = 0; i < num_cpus; i++) {
     auto core = (i + offset) % num_cpus;
     if (core != ebbrt::Cpu::GetMine()) {
@@ -79,7 +85,7 @@ bool seuss::InvokerRoot::GetWork(Invocation& i) {
   std::lock_guard<ebbrt::SpinLock> guard(qlock_);
   if (request_queue_.empty())
     return false;
-  auto tid = request_queue_.front();
+  uint64_t tid = request_queue_.front();
   request_queue_.pop();
   auto req = request_map_.find(tid);
   // TODO: fail gracefully, drop request
@@ -114,9 +120,9 @@ bool seuss::InvokerRoot::SetSnapshot(size_t fid, umm::UmSV* sv) {
     return false;
   }
   // Do we have room for another snapshot?
-  if (snapmap_.size() >= default_snapmap_limit) {
+  if (CacheIsFull()) {
     // Here is where we could evict a snapshot
-    kprintf(YELLOW "No room left for snapshot #%u\n" RESET, fid);
+    kprintf_force(YELLOW "Cache full! No room for snapshot #%u\n" RESET, fid);
     delete sv;
     return false;
   }
@@ -134,42 +140,111 @@ bool seuss::InvokerRoot::SetSnapshot(size_t fid, umm::UmSV* sv) {
 }
 
 void seuss::InvokerRoot::Bootstrap() {
-  // THIS SHOULD RUN AT MOST ONCE 
+  // THIS SHOULD RUN AT MOST ONCE
   kassert(!is_bootstrapped_);
   kprintf("Bootstrapping InvokerRoot on core #%d nid #%d\n",
           (size_t)ebbrt::Cpu::GetMine(), ebbrt::Cpu::GetMyNode().val());
 
-  // Port naming kludge
-  auto sv = umm::ElfLoader::createSVFromElf(&_sv_start);
-  auto umi = std::make_unique<umm::UmInstance>(sv);
+  { // Preinit Snapshot
+    auto sv = umm::ElfLoader::createSVFromElf(&_sv_start);
+    auto umi = std::make_unique<umm::UmInstance>(sv);
 
-  // TODO: move this to header
-  std::string opts_ = umi_rump_config_;
-  kprintf(RED "CONFIG= %s" RESET, opts_.c_str());
+    std::string opts_ = umi_rump_config_;
+    kprintf(RED "CONFIG= %s" RESET, opts_.c_str());
+    uint64_t argc = Solo5BootArguments(sv.GetRegionByName("usr").start,
+                                       SOLO5_USR_REGION_SIZE, opts_);
+    umi->SetArguments(argc);
+    // Load instance and set breakpoint for snapshot creation
+    ebbrt::Future<umm::UmSV *> snap_f =
+        umi->SetCheckpoint(umm::ElfLoader::GetSymbolAddress("uv_uptime"));
 
-  uint64_t argc = Solo5BootArguments(sv.GetRegionByName("usr").start,
-                                     SOLO5_USR_REGION_SIZE, opts_);
-  // Set the IP address
-  umi->SetArguments(argc);
-  // Load instance and set breakpoint for snapshot creation
-  ebbrt::Future<umm::UmSV*> snap_f = umi->SetCheckpoint(
-      umm::ElfLoader::GetSymbolAddress("uv_uptime"));
+    // Halt the instance after we've taking the snapshot
+    snap_f.Then([this](ebbrt::Future<umm::UmSV *> snap_f) {
+      // Capture preinit snapshot
+      // base_um_env_ = snap_f.Get();
+      preinit_env_ = snap_f.Get();
+      // Spawn asyncronously to allow the snapshot exception to clean up
+      // correctly
+      ebbrt::event_manager->SpawnLocal(
+          []() {
+            umm::manager->Halt(); /* Return to AppMain */
+          },
+          true);
+    }); // End snap_f.Then(...)
+    // Kick off the instance
+    kprintf("Kicking off the first preInit boot\n");
+    umm::manager->Run(std::move(umi));
+    // Return once manager->Halt() is called
+  }
 
-  // Halt the instance after we've taking the snapshot
-  snap_f.Then([this](ebbrt::Future<umm::UmSV*> snap_f) {
-    // Capture snapshot 
-    base_um_env_ = snap_f.Get();
-    // Spawn asyncronously to allow the snapshot exception to clean up
-    // correctly
+  // We've captured the preinit snapshot, next we deploy from that, run a NOP
+  // function, and capture the base envoirnment snapshot
+  {
+    // set the snapshot handler
+    auto umi = std::make_unique<umm::UmInstance>(*preinit_env_);
+    ebbrt::Future<umm::UmSV *> hot_sv_f =
+        umi->SetCheckpoint(umm::ElfLoader::GetSymbolAddress("uv_uptime"));
+    // When you have the sv, cache it.
+    hot_sv_f.Then([this](ebbrt::Future<umm::UmSV *> snap_f) {
+      base_um_env_ = snap_f.Get();
+    });
+
+    // Here is our warmup function & arguments
+    std::string code = R"(
+function main(args) {
+  console.log('dummy print statement');
+  return {done : true};
+};
+)";
+    std::string args = R"({"spin":"0"})";
+
+    // new invocation session for warmup code
+    auto pcb = new ebbrt::NetworkManager::TcpPcb;
+    auto umsesh = new InvocationSession(std::move(*pcb), 49159);
+    umsesh->WhenConnected().Then([umsesh, code](auto f) {
+      /* If we have code, initialize it and keep the connection alive */
+      umsesh->SendHttpRequest("/preInit", code, true /* keep_alive */);
+    });
+
+    /* When initialized send the run request */
+    umsesh->WhenInitialized().Then([umsesh, args](auto f) {
+      // Record initialization time, send run operation
+      umsesh->SendHttpRequest("/preRun", args, false /* keep_alive */);
+    });
+
+    /* Resolved invocation after successful execution successfully */
+    umsesh->WhenExecuted().Then([](auto f) {
+      // we're happy
+    });
+
+    /* Finalize this invocation when connection has closed */
+    umsesh->WhenClosed().Then([this](auto f) {
+      ebbrt::event_manager->SpawnLocal(
+          [] {
+            umm::manager->Halt();
+          },
+          /* async */ true);
+    });
+
+    /* Something went wrong. Kill the instance */
+    umsesh->WhenAborted().Then([this](auto f) {
+      ebbrt::kabort("Bootstrap process failed to pre-init\n");
+    });
+
+    /* Spawn a new event to make a connection with the instance */
     ebbrt::event_manager->SpawnLocal(
-        []() {
-          umm::manager->Halt(); /* Return to AppMain */
+        [this, umsesh] {
+          // Start a new TCP connection with the http request
+          umsesh->Connect();
         },
-        true);
-  }); // End snap_f.Then(...)
-  // Kick off the instance
-  umm::manager->Run(std::move(umi));
-  // Return once manager->Halt() is called
+        /* async */ true);
+
+    /* Start run of the instance */
+    kprintf("Kicking off the second preInit boot \n");
+    umm::manager->Run(std::move(umi));
+    // Block flow control until run has finished
+  }
+
   is_bootstrapped_ = true;
   return;
 }
@@ -295,12 +370,16 @@ bool seuss::Invoker::process_cold_start(seuss::Invocation i) {
                 umi_id);
 
   /* Snapshotting */
-  ebbrt::Future<umm::UmSV*> hot_sv_f = umi->SetCheckpoint(
-      umm::ElfLoader::GetSymbolAddress("uv_uptime"));
-  // When you have the sv, cache it.
-  hot_sv_f.Then([this, fid](ebbrt::Future<umm::UmSV *> f) {
-    root_.SetSnapshot(fid, std::move(f.Get()));
-  });
+  if (!root_.CacheIsFull()) {
+    ebbrt::Future<umm::UmSV *> hot_sv_f =
+        umi->SetCheckpoint(umm::ElfLoader::GetSymbolAddress("uv_uptime"));
+    // When you have the sv, cache it.
+    hot_sv_f.Then([this, fid](ebbrt::Future<umm::UmSV *> f) {
+      root_.SetSnapshot(fid, std::move(f.Get()));
+    });
+  }else{
+    kprintf_force(YELLOW "Cache full! Skipping snapshot #%u\n" RESET, fid);
+  }
 
   /* Make a new TCP connection with the instance */
   InvocationSession *umsesh =
@@ -325,7 +404,7 @@ bool seuss::Invoker::process_cold_start(seuss::Invocation i) {
   umsesh->WhenFinished().Block();
   auto status = umsesh->WhenFinished().Get();
   if (status)
-    kprintf_force("C(%d) " CYAN "cold finish" RESET ": %s, %u, %u\n",
+    kprintf("C(%d) " CYAN "cold finish" RESET ": %s, %u, %u\n",
             (size_t)ebbrt::Cpu::GetMine(), istats.activation_id, fid, umi_id);
   delete umsesh;
   return status;
@@ -371,7 +450,7 @@ bool seuss::Invoker::process_warm_start(seuss::Invocation i) {
   umsesh->WhenFinished().Block();
   auto status = umsesh->WhenFinished().Get();
   if (status)
-    kprintf_force("C(%d) " YELLOW "warm finish" RESET ": %s, %u, %u\n",
+    kprintf("C(%d) " YELLOW "warm finish" RESET ": %s, %u, %u\n",
             core_, istats.activation_id, fid, umi_id);
   delete umsesh;
   return status;
@@ -505,7 +584,7 @@ bool seuss::Invoker::process_hot_start(seuss::Invocation i) {
   umsesh->WhenFinished().Block();
   auto status = umsesh->WhenFinished().Get();
   if(status)
-    kprintf_force("C(%d):[%d,%d] " RED "hot finish" RESET " %s, %u, %u\n",
+    kprintf("C(%d):[%d,%d] " RED "hot finish" RESET " %s, %u, %u\n",
             core_, request_concurrency_.load(),
             stalled_instance_fifo_.size(), istats.activation_id, fid, umi_id);
   delete umsesh;

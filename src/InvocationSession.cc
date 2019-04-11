@@ -17,7 +17,7 @@ void seuss::InvocationSession::Connect() {
   ebbrt::kbugon(!src_port_);
   Pcb().Connect(umm::UmInstance::CoreLocalIp(), 8080, src_port_);
   auto now = ebbrt::clock::Wall::Now();
-  timeout_ = now + std::chrono::milliseconds(500); // 500ms
+  timeout_ = now + std::chrono::milliseconds(5000); // 5000ms
   enable_timer(now);
 }
 
@@ -147,7 +147,7 @@ seuss::InvocationSession::http_post_request(std::string path, std::string msg,
 
   msg.erase(std::remove(msg.begin(), msg.end(), '\n'), msg.end());
   payload << "{\"value\": ";
-  if (path == "/init") {
+  if (path == "/init" || path == "/preInit") {
     payload << "{\"main\":\"main\", \"code\":\"" << msg << "\"}}";
   } else {
     payload << msg << "}";

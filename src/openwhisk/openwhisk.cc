@@ -152,22 +152,35 @@ void openwhisk::test() {
 
             // Schedule activation, take from pool;
             concurrencyPool -= 1;
+            auto start_time = std::chrono::system_clock::now();
             auto cmf = seuss::controller->ScheduleActivation(am_tmp, code);
 
-            cmf.Then([i, &concurrencyPool](auto f) {
+            cmf.Then([i, &start_time, &concurrencyPool](auto f) {
               auto cm = f.Get();
+              auto end_time = std::chrono::system_clock::now();
+              auto duration = end_time - start_time;
+              auto duration_milli = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
+              // CSV format: <id, duratin, start time, end time, status, times, result>
+              std::cout << (i) << ", ";
+              std::cout << duration_milli.count() << ", ";
+              std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(start_time.time_since_epoch()).count() << ", ";
+              std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(end_time.time_since_epoch()).count() << ", ";
+
+                // String out double-quotes
+                auto ann = cm.response_.annotations_;
+                ann.erase(remove(ann.begin(), ann.end(), '\"'), ann.end());
+                auto res=cm.response_.result_;
+                res.erase(remove(res.begin(), res.end(), '\"'), res.end());
+                std::string status="1";
               if (cm.response_.status_code_ == 0) {
-                std::cout << "#" << (i) << " SUCCESS "
-                          << cm.response_.annotations_
-                          << ", duration: " << cm.response_.duration_
-                          << ", result: " << cm.response_.result_
-                          << std::endl;
-              } else {
-                std::cout << "#" << (i) << " FAILED " << std::endl;
+                status = "0";
               }
+              std::cout << status << ",\"" << ann
+                        << "{key:runTime,value:" << cm.response_.duration_
+                        << "}" << res << "\"" << std::endl;
               concurrencyPool += 1;
-              }); // then
-          } // for loop
+            }); // then
+          }     // for loop
 
           std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         } while (true); }, action_cpu->get_context(), true);

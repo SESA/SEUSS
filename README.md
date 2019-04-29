@@ -1,5 +1,5 @@
 # SEUSS
-### Serverless Execution Unikernel SnapShots
+### Serverless Execution Using Snapshots
  ![](docs/sneetch.png)
  
  SEUSS is a proof-of-concept operating system for a Function-as-a-Service invocation node

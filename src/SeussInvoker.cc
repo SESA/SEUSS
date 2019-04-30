@@ -53,25 +53,19 @@ void seuss::Init(){
 /* class seuss::InvokerRoot */
 size_t seuss::InvokerRoot::AddWork(seuss::Invocation i) {
   std::lock_guard<ebbrt::SpinLock> guard(qlock_);
-    kprintf_force(RED "START generating work#" RESET);
-  int numRuns = 65000;
-    uint64_t foo;
-  for (int i = 0; i < numRuns; i++) {
-    Invocation record;
-    // tid = //i.info.transaction_id;
-    // insert records into the hash tables
-    bool inserted;
-    std::tie(std::ignore, inserted) =
-        request_map_.emplace(foo, std::move(record));
-    // Assert there was no collision on the key
-    kassert(inserted);
-    request_queue_.push(foo);
-  }
-    kprintf_force(RED "Finished generating work#%u\n" RESET);
+  Invocation record = i; 
+  auto tid = i.info.transaction_id;
+  // insert records into the hash tables
+  bool inserted;
+  std::tie(std::ignore, inserted) =
+      request_map_.emplace(tid, std::move(record));
+  // Assert there was no collision on the key
+  kassert(inserted);
+  request_queue_.push(tid);
 
   // Inform all the cores about the work starting at a random offset
   size_t num_cpus = ebbrt::Cpu::Count();
-  size_t offset = foo % num_cpus;
+  size_t offset = tid % num_cpus;
   for (size_t i = 0; i < num_cpus; i++) {
     auto core = (i + offset) % num_cpus;
     if (core != ebbrt::Cpu::GetMine()) {

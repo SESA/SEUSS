@@ -103,6 +103,8 @@ private:
   bool process_warm_start(Invocation i);
   /* Connective to an active instance for this function */
   bool process_hot_start(Invocation i);
+  /* Start a running instance */
+  umm::umi::id start_instance();
   
   /* Returns a new session handler with the callbacks set */
   InvocationSession *new_invocation_session(seuss::InvocationStats *istats,

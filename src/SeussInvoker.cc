@@ -3,6 +3,7 @@
 //    (See accompanying file LICENSE_1_0.txt or copy at
 //          http://www.boost.org/LICENSE_1_0.txt)
 
+#include <chrono>
 #include <algorithm> /* std::remove */
 #include <sstream> /* std::ostringstream */
 
@@ -21,6 +22,8 @@
 #include "umm/src/UmManager.h"
 
 #define DEBUG_PRINT_SEUSS 0
+#define INSTANCE_LIMIT_TEST 1
+using namespace std::chrono;
 
 #define kprintf ebbrt::kprintf
 using ebbrt::kprintf_force;
@@ -48,6 +51,9 @@ void seuss::Init(){
 
   invoker_root->Bootstrap();
   kprintf_force(GREEN "\nFinished initialization of Seuss Invoker(())\n" RESET);
+#if INSTANCE_LIMIT_TEST
+  kprintf_force("\nCore, CoreActive, Umi, ElapsedTime, OwnedPages, MemFoot\n");
+#endif
 }
 
 /* class seuss::InvokerRoot */
@@ -322,7 +328,10 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
 
   ++request_concurrency_;
   ++invctr_;
-
+#if INSTANCE_LIMIT_TEST
+	start_instance();
+	Resolve(i.info,"");
+#else
   if (process_hot_start(i)) {
     //break;
   } else if (process_warm_start(i)) {
@@ -334,8 +343,8 @@ void seuss::Invoker::Invoke(seuss::Invocation i) {
     kprintf_force(RED "ERROR: Unable to process invocation\n" RESET);
     ebbrt::kabort();
   }
-
   --request_concurrency_;
+#endif
   ebbrt::event_manager->SpawnLocal([]() { seuss::invoker->Poke(); }, true);
 }
 
@@ -402,6 +411,39 @@ bool seuss::Invoker::process_cold_start(seuss::Invocation i) {
             (size_t)ebbrt::Cpu::GetMine(), istats.activation_id, fid, umi_id);
   delete umsesh;
   return status;
+}
+umm::umi::id seuss::Invoker::start_instance() {
+  /* Load up the base snapshot environment */
+  auto start = high_resolution_clock::now();
+  auto base_env = root_.GetBaseSV();
+
+  /* Create new UM instance for this invocation */
+  auto sv = std::make_unique<umm::UmInstance>(*base_env);
+  auto umi_id = sv->Id();
+  /* Block flow control until the instance is loaded */
+  umm::manager->Load(std::move(sv)).Block(); 
+
+  /* Start up the instance */
+  ebbrt::Promise<void> p;
+  auto f = p.GetFuture();
+  ebbrt::event_manager->SpawnLocal([umi_id, &p]() {
+    p.SetValue();
+    umm::manager->Start(umi_id);
+  });
+  f.Block();
+
+	/* Instance is started */
+  auto end = high_resolution_clock::now();
+  auto umi = umm::manager->GetInstance(umi_id);
+	umi->SetInactive();
+  auto owned_pages = umi->pfc.cowFaults + umi->pfc.wrFaults;
+  auto memory_footprint = (owned_pages * 4096);
+  auto run_duration =
+      std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+	// Core, CoreActive, Umi, ElapsedTime, OwnedPages, MemFoot 
+  kprintf_force("%d, %d, %u, %d, %d, %d\n", core_, request_concurrency_.load(),
+                umi_id, run_duration.count(), owned_pages, memory_footprint);
+  return umi_id;
 }
 
 bool seuss::Invoker::process_warm_start(seuss::Invocation i) {

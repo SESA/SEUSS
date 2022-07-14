@@ -12,9 +12,9 @@
 	url = https://github.com/lloyd/yajl.git
 [submodule "ext/EbbRT"]
 	path = ext/EbbRT
-	url = http://www.github.com/jmcadden/EbbRT
+	url = https://www.github.com/jmcadden/EbbRT
 	branch = container_deploy
 [submodule "src/umm"]
 	path = src/umm
-	url = git@github.com:SESA/Umm.git
+	url = https://github.com/SESA/Umm.git
 	ignore = dirty
